@@ -1,0 +1,54 @@
+{
+  "name": "@distill/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Core logic for LLM agent migration: profiler, judge, modifier, agents, validator",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./profiler": {
+      "types": "./dist/profiler/index.d.ts",
+      "import": "./dist/profiler/index.js"
+    },
+    "./judge": {
+      "types": "./dist/judge/index.d.ts",
+      "import": "./dist/judge/index.js"
+    },
+    "./modifier": {
+      "types": "./dist/modifier/index.d.ts",
+      "import": "./dist/modifier/index.js"
+    },
+    "./agents": {
+      "types": "./dist/agents/index.d.ts",
+      "import": "./dist/agents/index.js"
+    },
+    "./validator": {
+      "types": "./dist/validator/index.d.ts",
+      "import": "./dist/validator/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.0",
+    "@langchain/anthropic": "^0.3.0",
+    "@langchain/openai": "^0.3.0",
+    "langsmith": "^0.2.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  }
+}

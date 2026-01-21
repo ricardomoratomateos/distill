@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  distill-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: distill:dev
+    container_name: distill-dev
+    env_file:
+      - .env
+    volumes:
+      # Mount source code for hot-reload
+      - ./packages/core/src:/app/packages/core/src
+      - ./packages/cli/src:/app/packages/cli/src
+      - ./examples:/app/examples
+      # Mount config files
+      - ./tsconfig.base.json:/app/tsconfig.base.json
+      - ./packages/core/tsconfig.json:/app/packages/core/tsconfig.json
+      - ./packages/cli/tsconfig.json:/app/packages/cli/tsconfig.json
+      # Data persistence
+      - ./data:/app/data
+      - ./profiles:/app/profiles
+    working_dir: /app
+    stdin_open: true
+    tty: true
+    command: ["pnpm", "dev"]
+
+networks:
+  default:
+    name: distill-network
+    driver: bridge

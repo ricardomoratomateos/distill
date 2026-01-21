@@ -1,0 +1,102 @@
+[
+  {
+    "id": "simple-booking",
+    "input": "Book me into tomorrow's 6am WOD",
+    "context": {
+      "memberId": "member_123",
+      "currentDate": "2024-01-15"
+    },
+    "category": "happy-path"
+  },
+  {
+    "id": "afternoon-class",
+    "input": "I want to do the 5pm Olympic lifting class on Friday",
+    "context": {
+      "memberId": "member_123",
+      "currentDate": "2024-01-15"
+    },
+    "category": "happy-path"
+  },
+  {
+    "id": "ambiguous-time",
+    "input": "I want to do Olympic lifting this week",
+    "context": {
+      "memberId": "member_123",
+      "currentDate": "2024-01-15"
+    },
+    "category": "clarification-needed"
+  },
+  {
+    "id": "ambiguous-class",
+    "input": "Sign me up for a class tomorrow morning",
+    "context": {
+      "memberId": "member_123",
+      "currentDate": "2024-01-15"
+    },
+    "category": "clarification-needed"
+  },
+  {
+    "id": "class-full",
+    "input": "Sign me up for the 5pm WOD today",
+    "context": {
+      "memberId": "member_123",
+      "currentDate": "2024-01-15",
+      "mockResponses": {
+        "check_availability": { "available": false, "spotsLeft": 0 }
+      }
+    },
+    "category": "edge-case"
+  },
+  {
+    "id": "already-booked",
+    "input": "Book the 7am gymnastics class tomorrow",
+    "context": {
+      "memberId": "member_123",
+      "currentDate": "2024-01-15",
+      "mockResponses": {
+        "get_member_schedule": {
+          "bookings": [
+            { "date": "2024-01-16", "time": "07:00", "type": "WOD" }
+          ]
+        }
+      }
+    },
+    "category": "conflict"
+  },
+  {
+    "id": "casual-language",
+    "input": "hey can u get me into lifting tmrw morning?",
+    "context": {
+      "memberId": "member_456",
+      "currentDate": "2024-01-15"
+    },
+    "category": "informal"
+  },
+  {
+    "id": "cancel-and-rebook",
+    "input": "Actually, cancel my 6am and book me into the 7am instead",
+    "context": {
+      "memberId": "member_123",
+      "currentDate": "2024-01-15"
+    },
+    "category": "complex"
+  },
+  {
+    "id": "weekend-class",
+    "input": "What's available Saturday afternoon?",
+    "context": {
+      "memberId": "member_123",
+      "currentDate": "2024-01-15"
+    },
+    "category": "inquiry"
+  },
+  {
+    "id": "open-gym",
+    "input": "I just want to come in and work on my own stuff for an hour tomorrow",
+    "context": {
+      "memberId": "member_789",
+      "currentDate": "2024-01-15"
+    },
+    "category": "happy-path"
+  }
+]
