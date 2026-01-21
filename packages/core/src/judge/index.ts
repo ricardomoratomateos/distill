@@ -1,191 +1,132 @@
-import { ChatAnthropic } from "@langchain/anthropic";
-import { ChatOpenAI } from "@langchain/openai";
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { z } from "zod";
-import type { ModelConfig, EvaluationResult, EvaluationCriteria } from "../types/index.js";
+import { ChatAnthropic } from '@langchain/anthropic';
+import { ChatOpenAI } from '@langchain/openai';
+import type { AgentConfig, TestCase, TestResult, EvaluationResult } from '../types/index.js';
+import { buildJudgeEvaluationPrompt } from '../prompts/judge-evaluation.js';
 
 export interface JudgeConfig {
-  model: ModelConfig;
-  criteria?: EvaluationCriteria[];
+  model: {
+    provider: 'anthropic' | 'openai';
+    name: string;
+  };
   threshold?: number;
 }
 
-const DEFAULT_CRITERIA: EvaluationCriteria[] = [
-  {
-    name: "semantic_equivalence",
-    weight: 0.4,
-    description: "Does the target output convey the same meaning as the source?",
-  },
-  {
-    name: "completeness",
-    weight: 0.3,
-    description: "Does the target output include all key information from the source?",
-  },
-  {
-    name: "quality",
-    weight: 0.2,
-    description: "Is the target output well-structured and coherent?",
-  },
-  {
-    name: "accuracy",
-    weight: 0.1,
-    description: "Are facts and details preserved correctly?",
-  },
-];
-
-const JudgeResponseSchema = z.object({
-  score: z.number().min(0).max(1),
-  feedback: z.string(),
-  dimensions: z.record(z.number()).optional(),
-});
-
-/**
- * Judge evaluates the quality of migrated outputs
- * by comparing them against source model outputs
- */
 export class Judge {
-  private model: BaseChatModel;
-  private config: JudgeConfig;
-  private criteria: EvaluationCriteria[];
+  private model: ChatAnthropic | ChatOpenAI;
+  private threshold: number;
 
   constructor(config: JudgeConfig) {
-    this.config = config;
-    this.criteria = config.criteria ?? DEFAULT_CRITERIA;
+    this.threshold = config.threshold ?? 8;
     this.model = this.createModel(config.model);
   }
 
-  private createModel(config: ModelConfig): BaseChatModel {
-    switch (config.provider) {
-      case "anthropic":
+  private createModel(modelConfig: JudgeConfig['model']): ChatAnthropic | ChatOpenAI {
+    switch (modelConfig.provider) {
+      case 'anthropic':
         return new ChatAnthropic({
-          model: config.name,
+          modelName: modelConfig.name,
           temperature: 0,
-          maxTokens: config.maxTokens,
+          anthropicApiKey: process.env.ANTHROPIC_API_KEY,
         });
-      case "openai":
+      
+      case 'openai':
         return new ChatOpenAI({
-          model: config.name,
+          modelName: modelConfig.name,
           temperature: 0,
-          maxTokens: config.maxTokens,
+          openAIApiKey: process.env.OPENAI_API_KEY,
         });
+      
       default:
-        throw new Error(`Unsupported provider: ${config.provider}`);
+        throw new Error(`Unknown provider: ${modelConfig.provider}`);
     }
   }
 
-  private buildSystemPrompt(): string {
-    const criteriaText = this.criteria
-      .map((c, i) => `${i + 1}. ${c.name} (weight: ${c.weight}): ${c.description}`)
-      .join("\n");
-
-    return `You are an expert evaluator comparing AI model outputs.
-
-Your task is to evaluate how well a "target" output matches a "source" output for the same input.
-
-Evaluation criteria:
-${criteriaText}
-
-You must respond with a JSON object containing:
-- score: A number from 0 to 1 (0 = completely different, 1 = equivalent)
-- feedback: A brief explanation of your evaluation
-- dimensions: Optional object with scores for each criterion
-
-Be strict but fair. Focus on semantic meaning over exact wording.
-Respond ONLY with valid JSON, no other text.`;
-  }
-
-  private buildEvaluationPrompt(
-    input: string,
-    sourceOutput: string,
-    targetOutput: string
-  ): string {
-    return `Evaluate the following:
-
-**Input:**
-${input}
-
-**Source Output (reference/gold standard):**
-${sourceOutput}
-
-**Target Output (to evaluate):**
-${targetOutput}
-
-Respond with valid JSON only.`;
-  }
-
-  /**
-   * Evaluate a single migration result
-   */
-  async evaluate(
-    entryId: string,
-    input: string,
-    sourceOutput: string,
-    targetOutput: string
-  ): Promise<EvaluationResult> {
-    const response = await this.model.invoke([
-      new SystemMessage(this.buildSystemPrompt()),
-      new HumanMessage(
-        this.buildEvaluationPrompt(input, sourceOutput, targetOutput)
-      ),
-    ]);
-
-    const content =
-      typeof response.content === "string"
-        ? response.content
-        : JSON.stringify(response.content);
-
-    // Extract JSON from response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("Judge did not return valid JSON");
+  async evaluate(testCase: TestCase, actualOutput: string): Promise<EvaluationResult> {
+    const goldStandardOutput = testCase.expectedOutput?.response;
+    
+    if (!goldStandardOutput) {
+      throw new Error('Test case missing expected output');
     }
 
-    const parsed = JudgeResponseSchema.parse(JSON.parse(jsonMatch[0]));
-    const threshold = this.config.threshold ?? 0.8;
+    const evaluationPrompt = buildJudgeEvaluationPrompt({
+      input: testCase.input.message,
+      goldStandard: goldStandardOutput,
+      actual: actualOutput,
+      expectedBehavior: testCase.expectedBehavior,
+      threshold: this.threshold,
+    });
 
-    return {
-      entryId,
-      sourceOutput,
-      targetOutput,
-      score: parsed.score,
-      feedback: parsed.feedback,
-      passed: parsed.score >= threshold,
-      dimensions: parsed.dimensions,
-    };
+    try {
+      const response = await this.model.invoke(evaluationPrompt);
+      const evaluation = this.parseEvaluation(response.content as string);
+      
+      return evaluation;
+    } catch (error) {
+      throw new Error(`Judge evaluation failed: ${error}`);
+    }
   }
 
-  /**
-   * Evaluate multiple results in batch
-   */
-  async evaluateBatch(
-    items: Array<{
-      entryId: string;
-      input: string;
-      sourceOutput: string;
-      targetOutput: string;
-    }>
-  ): Promise<EvaluationResult[]> {
-    return Promise.all(
-      items.map((item) =>
-        this.evaluate(item.entryId, item.input, item.sourceOutput, item.targetOutput)
-      )
-    );
+  async evaluateBatch(testCases: TestCase[], actualOutputs: Map<string, string>): Promise<TestResult[]> {
+    const results: TestResult[] = [];
+
+    for (const testCase of testCases) {
+      const actualOutput = actualOutputs.get(testCase.id);
+      
+      if (!actualOutput) {
+        throw new Error(`Missing actual output for test case ${testCase.id}`);
+      }
+
+      console.log(`   Evaluating: ${testCase.description}`);
+      
+      const evaluation = await this.evaluate(testCase, actualOutput);
+      
+      const testResult: TestResult = {
+        testCaseId: testCase.id,
+        passed: evaluation.passed,
+        actualOutput: { response: actualOutput },
+        trace: {
+          input: testCase.input,
+          output: { response: actualOutput },
+          tokensUsed: { input: 0, output: 0, total: 0 },
+          latencyMs: 0,
+          cost: 0,
+          timestamp: new Date(),
+          modelUsed: 'target-model',
+        },
+        evaluation,
+      };
+
+      results.push(testResult);
+      
+      console.log(`      ${evaluation.passed ? '✓' : '✗'} Score: ${evaluation.scores.correctness}/10`);
+    }
+
+    return results;
   }
 
-  /**
-   * Get threshold for passing evaluation
-   */
-  get threshold(): number {
-    return this.config.threshold ?? 0.8;
-  }
+  private parseEvaluation(response: string): EvaluationResult {
+    try {
+      let cleaned = response.trim();
+      if (cleaned.startsWith('```json')) {
+        cleaned = cleaned.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+      } else if (cleaned.startsWith('```')) {
+        cleaned = cleaned.replace(/```\n?/g, '');
+      }
+      
+      const parsed = JSON.parse(cleaned);
+      
+      if (!parsed.scores || !parsed.reasoning) {
+        throw new Error('Invalid evaluation response structure');
+      }
 
-  /**
-   * Get current criteria
-   */
-  getCriteria(): EvaluationCriteria[] {
-    return [...this.criteria];
+      parsed.passed = Boolean(parsed.passed);
+      parsed.failures = parsed.failures || [];
+      parsed.suggestions = parsed.suggestions || [];
+
+      return parsed as EvaluationResult;
+      
+    } catch (error) {
+      throw new Error(`Failed to parse judge response: ${error}\nResponse was: ${response}`);
+    }
   }
 }
-
-export type { EvaluationResult, EvaluationCriteria } from "../types/index.js";

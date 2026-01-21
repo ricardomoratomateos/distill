@@ -40,16 +40,17 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@langchain/core": "^0.3.0",
-    "@langchain/anthropic": "^0.3.0",
-    "@langchain/openai": "^0.3.0",
+    "@langchain/anthropic": "^0.3.34",
+    "@langchain/core": "^0.3.80",
+    "@langchain/openai": "^0.3.17",
     "langsmith": "^0.2.0",
+    "nanoid": "^5.1.6",
     "yaml": "^2.7.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^2.1.0"
   }
 }

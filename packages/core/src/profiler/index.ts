@@ -1,170 +1,96 @@
-import type {
-  ModelConfig,
-  ProfileData,
-  ProfileEntry,
-  AgentSpec,
-  TestCase,
-} from "../types/index.js";
-import { ProfileDataSchema } from "../types/index.js";
-import { Agent, createAgentFromSpec } from "../agents/index.js";
+import type { AgentConfig, AgentInput, AgentOutput, AgentTrace, TestCase, TestSuite } from '../types/index.js';
+import { SingleAgent } from '../agents/single-agent.js';
+import { nanoid } from 'nanoid';
 
-export interface ProfilerConfig {
-  model?: ModelConfig;
-  spec?: AgentSpec;
-  batchSize?: number;
+export interface ProfilerOptions {
+  agentConfig: AgentConfig;
+  numExecutions?: number; // Default: 10
 }
 
-export interface ProfilerInput {
-  prompt: string;
-  context?: Record<string, unknown>;
-  category?: string;
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * Profiler captures input/output pairs from an expensive model
- * to create a dataset for migration training (gold standard)
- */
 export class Profiler {
-  private agent: Agent;
-  private config: ProfilerConfig;
-  private entries: ProfileEntry[] = [];
-  private modelConfig: ModelConfig;
+  private config: AgentConfig;
+  private agent: SingleAgent;
+  private numExecutions: number;
+  private testCases: TestCase[] = [];
 
-  constructor(config: ProfilerConfig) {
-    this.config = config;
-
-    if (config.spec) {
-      this.agent = createAgentFromSpec(config.spec, "profiler");
-      this.modelConfig = config.spec.model;
-    } else if (config.model) {
-      this.agent = new Agent({
-        role: "profiler",
-        model: config.model,
-      });
-      this.modelConfig = config.model;
-    } else {
-      throw new Error("Either model or spec must be provided");
-    }
+  constructor(options: ProfilerOptions) {
+    this.config = options.agentConfig;
+    this.numExecutions = options.numExecutions ?? 10;
+    
+    // Create the agent instance
+    this.agent = new SingleAgent(this.config);
   }
 
   /**
-   * Profile a single input and capture the output
+   * Profile the agent with given inputs
    */
-  async profile(input: ProfilerInput): Promise<ProfileEntry> {
-    const startTime = Date.now();
+  async profile(inputs: AgentInput[]): Promise<TestSuite> {
+    console.log(`🔬 Profiling agent: ${this.config.name}`);
+    console.log(`   Model: ${this.config.model.name}`);
+    console.log(`   Executing ${inputs.length} test cases...`);
 
-    this.agent.resetTracking();
-    const result = await this.agent.execute({ message: input.prompt });
-    const cost = this.agent.getCost();
-    const latency = Date.now() - startTime;
+    // Execute agent for each input
+    for (let i = 0; i < inputs.length; i++) {
+      const input = inputs[i];
+      
+      console.log(`   [${i + 1}/${inputs.length}] Executing...`);
+      
+      // Execute the agent (now real!)
+      const output = await this.agent.execute(input);
+      const trace = this.agent.getLastTrace();
 
-    const entry: ProfileEntry = {
-      id: crypto.randomUUID(),
-      input: input.prompt,
-      output: result.content,
-      cost: cost.totalCost,
-      latency,
-      category: input.category,
-      metadata: input.metadata,
-      timestamp: new Date().toISOString(),
-    };
+      if (!trace) {
+        throw new Error('No trace captured from agent execution');
+      }
 
-    this.entries.push(entry);
-    return entry;
-  }
+      // Store as test case
+      const testCase: TestCase = {
+        id: nanoid(),
+        description: `Test case ${i + 1}: ${input.message.substring(0, 50)}...`,
+        input,
+        expectedOutput: output,
+        expectedBehavior: undefined, // Can be added manually later
+      };
 
-  /**
-   * Profile multiple inputs in batch
-   */
-  async profileBatch(inputs: ProfilerInput[]): Promise<ProfileEntry[]> {
-    const results: ProfileEntry[] = [];
-    const batchSize = this.config.batchSize ?? 5;
-
-    for (let i = 0; i < inputs.length; i += batchSize) {
-      const batch = inputs.slice(i, i + batchSize);
-      const batchResults = await Promise.all(
-        batch.map((input) => this.profile(input))
-      );
-      results.push(...batchResults);
+      this.testCases.push(testCase);
+      
+      console.log(`      ✓ Cost: $${trace.cost.toFixed(4)}, Latency: ${trace.latencyMs}ms`);
     }
 
-    return results;
-  }
-
-  /**
-   * Profile from test cases
-   */
-  async profileTestCases(testCases: TestCase[]): Promise<ProfileEntry[]> {
-    const inputs: ProfilerInput[] = testCases.map((tc) => ({
-      prompt: tc.input,
-      context: tc.context,
-      category: tc.category,
-      metadata: { testCaseId: tc.id },
-    }));
-
-    return this.profileBatch(inputs);
-  }
-
-  /**
-   * Export captured profile data
-   */
-  export(): ProfileData {
-    const totalCost = this.entries.reduce((sum, e) => sum + (e.cost ?? 0), 0);
-    const totalLatency = this.entries.reduce((sum, e) => sum + (e.latency ?? 0), 0);
-
-    const data: ProfileData = {
-      sourceModel: this.modelConfig,
-      agentName: this.config.spec?.name,
-      entries: this.entries,
-      metrics: {
-        totalRuns: this.entries.length,
-        successRate: 1.0, // TODO: Implement actual success tracking
-        avgCost: this.entries.length > 0 ? totalCost / this.entries.length : 0,
-        avgLatency: this.entries.length > 0 ? totalLatency / this.entries.length : 0,
-      },
-      createdAt: new Date().toISOString(),
-      version: "1.0.0",
+    // Generate test suite
+    const testSuite: TestSuite = {
+      id: nanoid(),
+      name: `${this.config.name} - Gold Standard`,
+      description: `Generated from ${this.config.model.name}`,
+      agentName: this.config.name,
+      testCases: this.testCases,
+      createdAt: new Date(),
     };
 
-    return ProfileDataSchema.parse(data);
+    console.log(`✅ Profiling complete: ${this.testCases.length} test cases captured`);
+
+    return testSuite;
   }
 
   /**
-   * Load existing profile data
+   * Get all captured test cases
    */
-  load(data: ProfileData): void {
-    const validated = ProfileDataSchema.parse(data);
-    this.entries = validated.entries;
+  getTestCases(): TestCase[] {
+    return this.testCases;
   }
 
   /**
-   * Get current entries count
-   */
-  get count(): number {
-    return this.entries.length;
-  }
-
-  /**
-   * Get metrics summary
-   */
-  getMetrics(): { totalRuns: number; avgCost: number; avgLatency: number } {
-    const totalCost = this.entries.reduce((sum, e) => sum + (e.cost ?? 0), 0);
-    const totalLatency = this.entries.reduce((sum, e) => sum + (e.latency ?? 0), 0);
-
-    return {
-      totalRuns: this.entries.length,
-      avgCost: this.entries.length > 0 ? totalCost / this.entries.length : 0,
-      avgLatency: this.entries.length > 0 ? totalLatency / this.entries.length : 0,
-    };
-  }
-
-  /**
-   * Clear all entries
+   * Clear captured data
    */
   clear(): void {
-    this.entries = [];
+    this.testCases = [];
+  }
+
+  /**
+   * Export test suite to file
+   */
+  async exportToFile(testSuite: TestSuite, filepath: string): Promise<void> {
+    const { saveTestSuite } = await import('../utils/persistence.js');
+    await saveTestSuite(testSuite, filepath);
   }
 }
-
-export type { ProfileEntry, ProfileData } from "../types/index.js";

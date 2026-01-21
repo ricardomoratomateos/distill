@@ -1,120 +1,90 @@
-import { z } from "zod";
-import { ModelConfigSchema, type ModelConfig, type CostMetrics } from "./model.js";
+import { z } from 'zod';
 
-// Tool definition schema
-export const ToolParameterSchema = z.object({
-  type: z.string(),
-  description: z.string().optional(),
-  required: z.array(z.string()).optional(),
-  properties: z.record(z.any()).optional(),
-  enum: z.array(z.string()).optional(),
-});
-
-export const ToolDefinitionSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-  parameters: ToolParameterSchema.optional(),
-});
-
-export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
-
-// Agent spec schema (YAML config)
-export const AgentSpecSchema = z.object({
-  name: z.string(),
-  version: z.string().optional().default("1.0.0"),
-  description: z.string(),
-
-  model: ModelConfigSchema,
-
-  systemPrompt: z.string(),
-
-  tools: z.array(ToolDefinitionSchema).optional().default([]),
-
-  objective: z.string().optional(),
-
-  successCriteria: z.array(z.string()).optional().default([]),
-
-  outputSchema: z.object({
-    type: z.string(),
-    required: z.array(z.string()).optional(),
-    properties: z.record(z.any()).optional(),
-  }).optional(),
-
-  constraints: z.object({
-    targetSuccessRate: z.number().min(0).max(1).optional().default(0.95),
-    maxCostPerRun: z.number().optional(),
-    maxIterations: z.number().optional().default(10),
-    maxLatencyMs: z.number().optional(),
-  }).optional(),
-});
-
-export type AgentSpec = z.infer<typeof AgentSpecSchema>;
-
-// Agent input/output types
+/**
+ * Input/Output types for agent execution
+ */
 export interface AgentInput {
   message: string;
   context?: Record<string, unknown>;
-  threadId?: string;
 }
 
 export interface AgentOutput {
-  content: string;
-  toolCalls?: ToolCall[];
+  response: string;
   metadata?: Record<string, unknown>;
 }
 
-export interface ToolCall {
-  name: string;
-  arguments: Record<string, unknown>;
-  result?: unknown;
-}
-
-// Trace for debugging and profiling
-export interface TraceStep {
-  type: "llm" | "tool" | "error";
-  timestamp: string;
-  duration: number;
-  input: unknown;
-  output: unknown;
-  tokenUsage?: {
+/**
+ * Trace of a single agent execution
+ */
+export interface AgentTrace {
+  input: AgentInput;
+  output: AgentOutput;
+  tokensUsed: {
     input: number;
     output: number;
+    total: number;
   };
+  latencyMs: number;
+  cost: number;
+  timestamp: Date;
+  modelUsed: string;
 }
 
-export interface Trace {
-  id: string;
-  startTime: string;
-  endTime: string;
-  steps: TraceStep[];
-  totalDuration: number;
-  totalCost: number;
-}
-
-// Agent interface (core abstraction)
-export interface IAgent {
-  readonly type: "single" | "multi";
-  readonly spec: AgentSpec;
-
+/**
+ * Base Agent interface - works for both single and multi-agent
+ */
+export interface Agent {
+  readonly type: 'single' | 'multi-agent';
+  readonly name: string;
+  
+  /**
+   * Execute the agent with given input
+   */
   execute(input: AgentInput): Promise<AgentOutput>;
-  getCost(): CostMetrics;
-  getTrace(): Trace;
-  getConfig(): AgentSpec;
+  
+  /**
+   * Get the last execution trace
+   */
+  getLastTrace(): AgentTrace | null;
+  
+  /**
+   * Get cost of last execution
+   */
+  getLastCost(): number;
 }
 
-// Agent roles for different contexts
-export const AgentRoleSchema = z.enum([
-  "profiler",
-  "migrator",
-  "validator",
-  "judge",
-  "coordinator",
-]);
+/**
+ * Configuration for a single agent
+ */
+export const AgentConfigSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  
+  model: z.object({
+    provider: z.enum(['anthropic', 'openai', 'google']),
+    name: z.string(),
+    temperature: z.number().min(0).max(2).optional(),
+    maxTokens: z.number().positive().optional(),
+  }),
+  
+  systemPrompt: z.string(),
+  
+  tools: z.array(z.object({
+    name: z.string(),
+    description: z.string(),
+    schema: z.record(z.any()),
+  })).optional(),
+  
+  objective: z.string(),
+  successCriteria: z.array(z.string()),
+  
+  outputSchema: z.record(z.any()).optional(),
+  
+  constraints: z.object({
+    maxCostPerRun: z.number().positive().optional(),
+    maxLatency: z.number().positive().optional(),
+    minSuccessRate: z.number().min(0).max(1).default(0.95),
+  }).optional(),
+});
 
-export type AgentRole = z.infer<typeof AgentRoleSchema>;
-
-export interface AgentContext {
-  role: AgentRole;
-  config: ModelConfig;
-  metadata?: Record<string, unknown>;
-}
+export type AgentConfig = z.infer<typeof AgentConfigSchema>;
