@@ -32,12 +32,35 @@ cd distill
 # Install dependencies
 pnpm install
 
-# Build all packages
+# Build all packages (uses Turborepo)
 pnpm build
 
 # Set up environment
 cp .env.example .env
 # Add your API keys to .env
+```
+
+### Build System
+
+This project uses **pnpm workspaces** + **Turborepo**:
+
+- **pnpm**: Fast, disk-efficient package manager with workspace support
+- **Turborepo**: Build orchestration with intelligent caching and parallelization
+
+```bash
+pnpm build      # Build all packages (cached)
+pnpm dev        # Watch mode for all packages
+pnpm test       # Run tests in parallel
+pnpm lint       # Lint all packages
+pnpm typecheck  # TypeScript type checking
+pnpm clean      # Clean dist/, .turbo/, node_modules/
+```
+
+Turborepo caches task outputs in `.turbo/`. Second builds are near-instant:
+
+```
+First build:  Tasks: 3 successful | Time: 1.5s
+Second build: Tasks: 3 cached    | Time: 52ms >>> FULL TURBO
 ```
 
 ### Environment Variables
@@ -72,12 +95,13 @@ distill/
 ├── packages/
 │   ├── core/                 # Main library
 │   │   ├── src/
-│   │   │   ├── types.ts      # Shared types and schemas
+│   │   │   ├── types/        # Shared types and schemas
 │   │   │   ├── profiler/     # Captures agent behavior
 │   │   │   ├── judge/        # LLM-based evaluation
 │   │   │   ├── modifier/     # Prompt optimization
 │   │   │   ├── agents/       # Agent abstractions
 │   │   │   ├── validator/    # End-to-end testing
+│   │   │   ├── config/       # YAML config loader
 │   │   │   └── index.ts      # Public exports
 │   │   ├── package.json
 │   │   └── tsconfig.json
@@ -89,10 +113,14 @@ distill/
 │   │   ├── package.json
 │   │   └── tsconfig.json
 │   │
-│   └── web/                  # Future: dashboard
+│   └── web/                  # Dashboard (placeholder)
+│       ├── src/
+│       ├── package.json
+│       └── tsconfig.json
 │
 ├── examples/                 # Example agents and configs
 ├── docs/                     # Documentation
+├── turbo.json                # Turborepo task configuration
 ├── pnpm-workspace.yaml       # Workspace configuration
 ├── tsconfig.base.json        # Shared TypeScript config
 └── package.json              # Root scripts
@@ -247,7 +275,10 @@ pnpm test
 # Run linting
 pnpm lint
 
-# Build to check for type errors
+# Check types (without building)
+pnpm typecheck
+
+# Build (also checks types)
 pnpm build
 
 # Commit changes
@@ -266,8 +297,9 @@ git push origin feature/my-feature
 
 1. **Tests pass**: `pnpm test`
 2. **Lint passes**: `pnpm lint`
-3. **Build succeeds**: `pnpm build`
-4. **Documentation updated** (if needed)
+3. **Types check**: `pnpm typecheck`
+4. **Build succeeds**: `pnpm build`
+5. **Documentation updated** (if needed)
 
 ### PR Template
 
@@ -292,6 +324,7 @@ Describe how you tested the changes.
 - [ ] Tests added/updated
 - [ ] Documentation updated
 - [ ] Lint passes
+- [ ] Types check
 - [ ] Build succeeds
 ```
 

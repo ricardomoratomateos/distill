@@ -36,6 +36,7 @@
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {

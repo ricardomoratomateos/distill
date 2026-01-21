@@ -225,10 +225,27 @@ distill/
 │   │   ├── agents/     # Agent abstractions
 │   │   └── validator/  # End-to-end testing
 │   ├── cli/            # Command-line interface
-│   └── web/            # Dashboard (coming soon)
+│   └── web/            # Dashboard (placeholder)
 ├── examples/           # Real-world examples
-└── docs/               # Documentation
+├── docs/               # Documentation
+├── turbo.json          # Turborepo task configuration
+└── pnpm-workspace.yaml # pnpm workspaces config
 ```
+
+## Development
+
+This project uses **pnpm workspaces** + **Turborepo** for fast, cached builds:
+
+```bash
+pnpm build      # Build all packages (with caching)
+pnpm dev        # Watch mode for all packages
+pnpm test       # Run tests in parallel
+pnpm lint       # Lint all packages
+pnpm typecheck  # TypeScript validation
+pnpm clean      # Clean build artifacts and cache
+```
+
+Turborepo caches build outputs - subsequent builds are near-instant if nothing changed.
 
 ## Roadmap
 

@@ -5,14 +5,19 @@
   "type": "module",
   "description": "Automatic LLM agent migration from expensive to cheap models",
   "scripts": {
-    "dev": "pnpm -r dev",
-    "build": "pnpm -r build",
-    "clean": "pnpm -r clean && rm -rf node_modules",
-    "lint": "pnpm -r lint",
-    "test": "pnpm -r test",
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean && rm -rf node_modules .turbo",
     "docker:up": "docker-compose up --build",
     "docker:down": "docker-compose down",
     "docker:dev": "docker-compose -f docker-compose.dev.yml up --build"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.7.0"
   },
   "engines": {
     "node": ">=20.0.0",
