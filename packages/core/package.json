@@ -42,6 +42,7 @@
   "dependencies": {
     "@langchain/anthropic": "^0.3.34",
     "@langchain/core": "^0.3.80",
+    "@langchain/langgraph": "^1.1.1",
     "@langchain/openai": "^0.3.17",
     "langsmith": "^0.2.0",
     "nanoid": "^5.1.6",

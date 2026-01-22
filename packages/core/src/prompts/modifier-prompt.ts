@@ -8,16 +8,25 @@ export interface ModifierPromptParams {
 
 export function buildModifierPrompt(params: ModifierPromptParams): string {
   const { currentPrompt, failedTests, modelName } = params;
-  
-  const failuresSummary = failedTests.map((test, i) => {
+
+  // Abstract failure patterns - NO specific inputs/outputs
+  const failurePatterns = failedTests.map((test, i) => {
     const evaluation = test.evaluation!;
+    const inputLength = test.trace.input.message.length;
+    const expectedLength = test.trace.output.response.length;
+    const actualLength = test.actualOutput.response.length;
+
+    // Classify question type without revealing content
+    let questionType = 'general';
+    if (inputLength < 30) questionType = 'simple';
+    else if (test.trace.input.message.includes('one sentence')) questionType = 'concise_explanation';
+    else if (inputLength > 50) questionType = 'complex';
+
     return `
-Test ${i + 1}:
-Input: ${test.trace.input.message}
-Expected: ${test.trace.output.response}
-Actual: ${test.actualOutput.response}
+Pattern ${i + 1} - ${questionType} question:
+Length mismatch: Expected ~${expectedLength} chars, got ${actualLength} chars
 Issues: ${evaluation.failures.join('; ')}
-Suggestions: ${evaluation.suggestions.join('; ')}
+General guidance needed: ${evaluation.suggestions.join('; ')}
 `;
   }).join('\n');
 
@@ -28,14 +37,19 @@ ${currentPrompt}
 
 TARGET MODEL: ${modelName}
 
-FAILED TESTS (${failedTests.length}):
-${failuresSummary}
+FAILURE PATTERNS OBSERVED (${failedTests.length}):
+${failurePatterns}
 
-Analyze the failures and provide an IMPROVED system prompt that:
-1. Makes implicit instructions explicit
-2. Adds examples for common patterns
-3. Addresses specific failure modes
-4. Maintains conciseness where possible
+Your task: Generate an IMPROVED system prompt that teaches GENERAL STRATEGIES.
 
-Respond with ONLY the improved prompt (no explanation, no markdown).`;
+CRITICAL RULES:
+1. DO NOT include specific answers or example responses from the test cases
+2. DO NOT memorize the test inputs - teach general approaches instead
+3. Focus on TRANSFERABLE strategies (e.g., "match response length to question complexity")
+4. Add guidelines for handling different TYPES of questions (simple, complex, concise explanations)
+5. Use abstract examples if needed, but NEVER from the actual test cases
+
+The improved prompt should help the model handle NEW questions, not just pass these specific tests.
+
+Respond with ONLY the improved system prompt (no explanation, no markdown, no code blocks).`;
 }
