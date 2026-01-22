@@ -49,28 +49,35 @@ export async function testNode(state: typeof MigrationState.State) {
 }
 
 /**
- * Node: Check if we should continue iterating
+ * Node: Initialize the convergence strategy
+ */
+export function initializeStrategy(state: typeof MigrationState.State) {
+  state.strategy.initialize(state);
+  return {};
+}
+
+/**
+ * Node: Check if we should continue iterating using the strategy
  */
 export function checkConvergence(state: typeof MigrationState.State) {
-  const converged = state.successRate >= state.threshold;
-  const maxed = state.iteration >= state.maxIterations;
-  
-  if (converged) {
-    console.log(`\n✅ Converged! Success rate ${(state.successRate * 100).toFixed(1)}% >= ${(state.threshold * 100).toFixed(1)}%`);
+  const decision = state.strategy.shouldContinue(state);
+
+  console.log(`   Strategy decision: ${decision.reason}`);
+
+  if (!decision.shouldContinue) {
+    console.log(`\n🏁 Migration complete!`);
+
+    // Get best result from strategy
+    const best = state.strategy.getBestResult(state);
+
     return {
-      converged: true,
-      finalPrompt: state.currentPrompt,
+      converged: best.successRate >= state.threshold,
+      finalPrompt: best.prompt,
+      successRate: best.successRate,
+      iteration: best.iteration,
     };
   }
-  
-  if (maxed) {
-    console.log(`\n⚠️  Max iterations reached. Best: ${(state.successRate * 100).toFixed(1)}%`);
-    return {
-      converged: false,
-      finalPrompt: state.currentPrompt,
-    };
-  }
-  
+
   // Continue iterating
   return { converged: false };
 }

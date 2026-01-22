@@ -1,5 +1,5 @@
 import { Profiler } from '../profiler/index.js';
-import { Validator } from '../validator/index.js';
+import { Validator, ThresholdPlusBonusRoundsStrategy } from '../validator/index.js';
 import type { AgentConfig } from '../types/index.js';
 
 // Modelo caro (gold standard)
@@ -71,6 +71,7 @@ async function test() {
   const validator = new Validator({
     threshold: 0.75, // 75% success rate needed
     maxIterations: 5,
+    strategy: new ThresholdPlusBonusRoundsStrategy({ bonusRounds: 2 }),
   });
 
   const result = await validator.migrate(sourceConfig, targetConfig, testSuite);

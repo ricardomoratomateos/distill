@@ -1,9 +1,12 @@
 import { createMigrationGraph } from './graph.js';
 import type { AgentConfig, TestSuite } from '../types/index.js';
+import type { ConvergenceStrategy } from './strategies/index.js';
+import { ThresholdPlusBonusRoundsStrategy } from './strategies/index.js';
 
 export interface ValidatorConfig {
   threshold?: number;      // Success rate needed (0-1), default: 0.95
   maxIterations?: number;  // Max iterations, default: 10
+  strategy?: ConvergenceStrategy; // Convergence strategy, default: ThresholdPlusBonusRounds(2)
 }
 
 export interface MigrationResult {
@@ -15,12 +18,13 @@ export interface MigrationResult {
 }
 
 export class Validator {
-  private config: ValidatorConfig;
+  private config: Required<ValidatorConfig>;
 
   constructor(config: ValidatorConfig = {}) {
     this.config = {
       threshold: config.threshold ?? 0.95,
       maxIterations: config.maxIterations ?? 10,
+      strategy: config.strategy ?? new ThresholdPlusBonusRoundsStrategy({ bonusRounds: 2 }),
     };
   }
 
@@ -43,6 +47,7 @@ export class Validator {
       testSuite,
       threshold: this.config.threshold,
       maxIterations: this.config.maxIterations,
+      strategy: this.config.strategy,
       currentPrompt: targetConfig.systemPrompt,
       iteration: 0,
       testResults: [],
@@ -64,3 +69,4 @@ export class Validator {
 export * from './state.js';
 export * from './graph.js';
 export * from './nodes.js';
+export * from './strategies/index.js';
