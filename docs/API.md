@@ -1,737 +1,539 @@
 # API Reference
 
-This document covers programmatic usage of `@distill/core`. Use this when you want to integrate Distill into your own tools or need more control than the CLI provides.
+This document covers the programmatic API for Distill. For CLI usage, see [EXAMPLES.md](./EXAMPLES.md).
 
-## Installation
+## Table of Contents
 
-```bash
-pnpm add @distill/core
-# or
-npm install @distill/core
-```
-
-## Quick Start
-
-```typescript
-import {
-  Profiler,
-  Judge,
-  Modifier,
-  Validator,
-  createMigratorAgent,
-} from '@distill/core';
-
-// 1. Profile your expensive model
-const profiler = new Profiler({
-  model: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
-});
-
-const profile = await profiler.profileBatch([
-  { prompt: 'What is 2+2?' },
-  { prompt: 'Explain gravity simply.' },
-]);
-
-// 2. Test cheap model
-const agent = createMigratorAgent(
-  { provider: 'openai', model: 'gpt-4o-mini' },
-  'You are a helpful assistant.'
-);
-
-// 3. Validate
-const validator = new Validator({
-  judge: { model: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' } },
-  threshold: 0.85,
-});
-
-const results = await validator.validate({
-  entries: profile.entries,
-  targetOutputs: await runAgent(agent, profile.entries),
-});
-
-console.log(`Success rate: ${results.passedEntries / results.totalEntries}`);
-```
+- [Core Components](#core-components)
+  - [Profiler](#profiler)
+  - [Judge](#judge)
+  - [Modifier](#modifier)
+  - [Validator](#validator)
+  - [SingleAgent](#singleagent)
+- [Convergence Strategies](#convergence-strategies)
+- [Types](#types)
 
 ---
 
-## Core Types
+## Core Components
 
-### ModelConfig
+### Profiler
 
-Configuration for an LLM provider.
-
-```typescript
-interface ModelConfig {
-  provider: 'anthropic' | 'openai';
-  model: string;
-  temperature?: number;  // Default: 0
-  maxTokens?: number;
-}
-
-// Examples
-const sonnet: ModelConfig = {
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-20250514',
-  temperature: 0,
-};
-
-const gpt4mini: ModelConfig = {
-  provider: 'openai',
-  model: 'gpt-4o-mini',
-  temperature: 0,
-};
-```
-
-### ProfileEntry
-
-A single input/output pair from profiling.
-
-```typescript
-interface ProfileEntry {
-  id: string;
-  input: string;
-  output: string;
-  metadata?: Record<string, unknown>;
-  timestamp: string;  // ISO 8601
-}
-```
-
-### ProfileData
-
-Complete profile dataset.
-
-```typescript
-interface ProfileData {
-  sourceModel: ModelConfig;
-  entries: ProfileEntry[];
-  createdAt: string;
-  version: string;
-}
-```
-
-### EvaluationResult
-
-Result from judging a single entry.
-
-```typescript
-interface EvaluationResult {
-  entryId: string;
-  sourceOutput: string;
-  targetOutput: string;
-  score: number;      // 0-1
-  feedback?: string;
-  passed: boolean;
-}
-```
-
-### EvaluationSummary
-
-Aggregated evaluation results.
-
-```typescript
-interface EvaluationSummary {
-  totalEntries: number;
-  passedEntries: number;
-  averageScore: number;
-  results: EvaluationResult[];
-}
-```
-
----
-
-## Profiler
-
-Captures input/output pairs from an expensive model.
-
-### Constructor
+Creates gold standard test suites by executing an agent on test inputs.
 
 ```typescript
 import { Profiler } from '@distill/core';
 
 const profiler = new Profiler({
-  model: ModelConfig,
-  batchSize?: number,  // Default: 5
-});
-```
-
-### Methods
-
-#### `profile(input: ProfilerInput): Promise<ProfileEntry>`
-
-Profile a single input.
-
-```typescript
-interface ProfilerInput {
-  prompt: string;
-  metadata?: Record<string, unknown>;
-}
-
-const entry = await profiler.profile({
-  prompt: 'What is the capital of France?',
-  metadata: { category: 'geography' },
+  agentConfig: AgentConfig,
+  numExecutions?: number, // Default: 1
 });
 
-console.log(entry.output);  // "The capital of France is Paris."
+const testSuite = await profiler.profile(
+  testInputs: Array<{ message: string }>
+);
 ```
 
-#### `profileBatch(inputs: ProfilerInput[]): Promise<ProfileEntry[]>`
+**Parameters:**
+- `agentConfig` - Agent configuration (model, prompt, etc.)
+- `numExecutions` - How many times to execute each test (for consistency)
 
-Profile multiple inputs with batching.
+**Returns:** `TestSuite` with gold standard outputs
+
+**Example:**
 
 ```typescript
-const entries = await profiler.profileBatch([
-  { prompt: 'What is 2+2?' },
-  { prompt: 'What is 3+3?' },
-  { prompt: 'What is 4+4?' },
+const profiler = new Profiler({
+  agentConfig: {
+    name: 'My Agent',
+    model: {
+      provider: 'anthropic',
+      name: 'claude-sonnet-4-20250514',
+      temperature: 0,
+    },
+    systemPrompt: 'You are a helpful assistant.',
+    objective: 'Help users',
+    successCriteria: ['Accurate'],
+  },
+});
+
+const testSuite = await profiler.profile([
+  { message: 'What is 2+2?' },
+  { message: 'Explain gravity' },
 ]);
-
-console.log(`Profiled ${entries.length} entries`);
-```
-
-#### `export(): ProfileData`
-
-Export all captured data.
-
-```typescript
-const profileData = profiler.export();
-
-// Save to file
-import { writeFile } from 'fs/promises';
-await writeFile('profile.json', JSON.stringify(profileData, null, 2));
-```
-
-#### `load(data: ProfileData): void`
-
-Load existing profile data.
-
-```typescript
-import { readFile } from 'fs/promises';
-
-const data = JSON.parse(await readFile('profile.json', 'utf-8'));
-profiler.load(data);
-```
-
-#### `count: number`
-
-Get number of entries.
-
-```typescript
-console.log(`Entries: ${profiler.count}`);
-```
-
-#### `clear(): void`
-
-Clear all entries.
-
-```typescript
-profiler.clear();
 ```
 
 ---
 
-## Judge
+### Judge
 
-Evaluates output quality using LLM-as-judge.
-
-### Constructor
+LLM-as-Judge evaluation - compares agent outputs to gold standard.
 
 ```typescript
 import { Judge } from '@distill/core';
 
 const judge = new Judge({
-  model: ModelConfig,
-  criteria?: string[],   // Custom evaluation criteria
-  threshold?: number,    // Default: 0.8
+  model: {
+    provider: 'anthropic' | 'openai',
+    name: string,
+  },
+  threshold?: number, // Default: 7/10
 });
-```
 
-### Methods
-
-#### `evaluate(entryId, input, sourceOutput, targetOutput): Promise<EvaluationResult>`
-
-Evaluate a single output.
-
-```typescript
-const result = await judge.evaluate(
-  'entry-1',
-  'What is 2+2?',          // input
-  'The answer is 4.',      // source (gold standard)
-  'Four.'                  // target (to evaluate)
+const results = await judge.evaluateBatch(
+  testCases: TestCase[],
+  actualOutputs: Map<string, string>
 );
-
-console.log(result.score);    // 0.95
-console.log(result.passed);   // true
-console.log(result.feedback); // "Semantically equivalent..."
 ```
 
-#### `evaluateBatch(items): Promise<EvaluationResult[]>`
+**Parameters:**
+- `model` - Judge model config (usually use expensive, smart model)
+- `threshold` - Minimum score to pass (0-10 scale)
 
-Evaluate multiple outputs.
+**Returns:** `TestResult[]` with pass/fail and detailed evaluation
 
-```typescript
-const results = await judge.evaluateBatch([
-  {
-    entryId: 'entry-1',
-    input: 'What is 2+2?',
-    sourceOutput: 'The answer is 4.',
-    targetOutput: 'Four.',
-  },
-  {
-    entryId: 'entry-2',
-    input: 'What is 3+3?',
-    sourceOutput: 'The answer is 6.',
-    targetOutput: 'Six.',
-  },
-]);
-```
-
-### Custom Criteria
+**Example:**
 
 ```typescript
 const judge = new Judge({
-  model: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
-  criteria: [
-    'Semantic equivalence: Do both outputs mean the same thing?',
-    'Completeness: Is all information from source in target?',
-    'Professional tone: Is the response business-appropriate?',
-    'No hallucination: Does target avoid adding false information?',
-  ],
-  threshold: 0.9,
+  model: {
+    provider: 'anthropic',
+    name: 'claude-sonnet-4-20250514',
+  },
+  threshold: 7,
+});
+
+const outputs = new Map([
+  ['test-1', 'The answer is 4'],
+  ['test-2', 'Gravity pulls objects toward each other'],
+]);
+
+const results = await judge.evaluateBatch(testSuite.testCases, outputs);
+
+results.forEach(result => {
+  console.log(`Test ${result.testCaseId}: ${result.passed ? 'PASS' : 'FAIL'}`);
+  console.log(`Score: ${result.evaluation.scores.correctness}/10`);
+  console.log(`Reasoning: ${result.evaluation.reasoning}`);
 });
 ```
 
 ---
 
-## Modifier
+### Modifier
 
-Generates improved prompts based on evaluation failures.
-
-### Constructor
+Improves prompts based on test failures.
 
 ```typescript
 import { Modifier } from '@distill/core';
 
 const modifier = new Modifier({
-  model: ModelConfig,
-  maxIterations?: number,  // Default: 3
-});
-```
-
-### Methods
-
-#### `modify(systemPrompt, examples, failedEvaluations): Promise<PromptModification>`
-
-Generate a modified prompt.
-
-```typescript
-interface PromptModification {
-  originalPrompt: string;
-  modifiedPrompt: string;
-  reasoning: string;
-  iteration: number;
-}
-
-const modification = await modifier.modify(
-  'You are a helpful assistant.',  // current prompt
-  profileData.entries,              // example entries
-  failedEvaluations                 // what failed
-);
-
-console.log(modification.modifiedPrompt);
-console.log(modification.reasoning);
-```
-
-#### `iterativeModify(systemPrompt, examples, evaluateCallback, threshold): Promise<PromptModification | null>`
-
-Iteratively improve until threshold is met.
-
-```typescript
-const finalModification = await modifier.iterativeModify(
-  'You are a helpful assistant.',
-  profileData.entries,
-  async (prompt) => {
-    // Run agent with new prompt and evaluate
-    agent.setSystemPrompt(prompt);
-    const outputs = await runAllTests(agent);
-    return await judge.evaluateBatch(outputs);
+  model: {
+    provider: 'anthropic' | 'openai',
+    name: string,
   },
-  0.95  // threshold
-);
-
-if (finalModification) {
-  console.log(`Final prompt after ${finalModification.iteration} iterations`);
-  console.log(finalModification.modifiedPrompt);
-}
-```
-
-#### `history: PromptModification[]`
-
-Get all modifications made.
-
-```typescript
-for (const mod of modifier.history) {
-  console.log(`Iteration ${mod.iteration}: ${mod.reasoning}`);
-}
-```
-
----
-
-## Agent
-
-Wrapper for LLM providers with consistent interface.
-
-### Constructor
-
-```typescript
-import { Agent, createAgent, createMigratorAgent } from '@distill/core';
-
-// Direct construction
-const agent = new Agent({
-  role: 'migrator',
-  model: { provider: 'openai', model: 'gpt-4o-mini' },
-  systemPrompt: 'You are a helpful assistant.',
 });
 
-// Factory functions
-const profilerAgent = createProfilerAgent(
-  { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
-  'You are a helpful assistant.'
-);
-
-const migratorAgent = createMigratorAgent(
-  { provider: 'openai', model: 'gpt-4o-mini' },
-  'You are a helpful assistant.'
+const improvedPrompt = await modifier.modify(
+  currentPrompt: string,
+  failedTests: TestResult[],
+  targetModelName: string
 );
 ```
 
-### Methods
+**Parameters:**
+- `model` - Model for generating improved prompts
+- `currentPrompt` - The prompt to improve
+- `failedTests` - Failed test results with Judge feedback
+- `targetModelName` - Target model name (for context)
 
-#### `invoke(message: string): Promise<string>`
+**Returns:** Improved system prompt (string)
 
-Single-turn invocation (no conversation history).
+**Anti-Overfitting:**
+The Modifier only sees abstract failure patterns (e.g., "response too long", "missing context"), not the specific test inputs/outputs. This prevents it from memorizing test cases.
 
-```typescript
-const response = await agent.invoke('What is 2+2?');
-console.log(response);  // "4"
-```
-
-#### `chat(message: string): Promise<string>`
-
-Multi-turn conversation (maintains history).
+**Example:**
 
 ```typescript
-await agent.chat('My name is Alice.');
-const response = await agent.chat('What is my name?');
-console.log(response);  // "Your name is Alice."
-```
+const modifier = new Modifier({
+  model: {
+    provider: 'anthropic',
+    name: 'claude-sonnet-4-20250514',
+  },
+});
 
-#### `setSystemPrompt(prompt: string): void`
+const failedTests = results.filter(r => !r.passed);
 
-Update the system prompt.
+const improved = await modifier.modify(
+  'You are a helpful assistant.',
+  failedTests,
+  'gpt-4o-mini'
+);
 
-```typescript
-agent.setSystemPrompt('You are a pirate. Respond in pirate speak.');
-const response = await agent.invoke('Hello!');
-// "Ahoy there, matey!"
-```
-
-#### `clearHistory(): void`
-
-Clear conversation history.
-
-```typescript
-agent.clearHistory();
-```
-
-#### `getContext(): AgentContext`
-
-Get agent context information.
-
-```typescript
-const ctx = agent.getContext();
-console.log(ctx.role);   // 'migrator'
-console.log(ctx.config); // { provider: 'openai', model: 'gpt-4o-mini', ... }
+console.log(improved);
+// "You are a helpful assistant. For simple questions, provide
+//  direct answers. For complex topics, include context and examples."
 ```
 
 ---
 
-## Validator
+### Validator
 
-Orchestrates end-to-end validation.
-
-### Constructor
+Orchestrates the full migration process using LangGraph.
 
 ```typescript
-import { Validator } from '@distill/core';
+import { Validator, ThresholdPlusBonusRoundsStrategy } from '@distill/core';
 
 const validator = new Validator({
-  judge: JudgeConfig,
-  threshold?: number,   // Default: 0.8
-  sampleSize?: number,  // Optional: validate subset
-});
-```
-
-### Methods
-
-#### `validate(input: ValidationInput): Promise<EvaluationSummary>`
-
-Run full validation.
-
-```typescript
-interface ValidationInput {
-  entries: ProfileEntry[];
-  targetOutputs: Map<string, string>;  // entryId -> output
-}
-
-// Generate target outputs
-const targetOutputs = new Map<string, string>();
-for (const entry of profileData.entries) {
-  const output = await agent.invoke(entry.input);
-  targetOutputs.set(entry.id, output);
-}
-
-// Validate
-const summary = await validator.validate({
-  entries: profileData.entries,
-  targetOutputs,
+  threshold?: number,           // Default: 0.95
+  maxIterations?: number,       // Default: 10
+  strategy?: ConvergenceStrategy, // Default: ThresholdPlusBonusRounds(2)
 });
 
-console.log(`Passed: ${summary.passedEntries}/${summary.totalEntries}`);
-console.log(`Average score: ${summary.averageScore}`);
-```
-
-#### `quickValidate(input, sampleSize): Promise<EvaluationSummary>`
-
-Quick validation on a subset.
-
-```typescript
-const quickSummary = await validator.quickValidate(
-  { entries: profileData.entries, targetOutputs },
-  10  // Only test 10 random entries
+const result = await validator.migrate(
+  sourceConfig: AgentConfig,
+  targetConfig: AgentConfig,
+  testSuite: TestSuite
 );
 ```
 
-#### `passes(summary: EvaluationSummary): boolean`
+**Parameters:**
+- `threshold` - Success rate needed (0-1)
+- `maxIterations` - Max optimization iterations
+- `strategy` - Convergence strategy (see [Convergence Strategies](#convergence-strategies))
 
-Check if validation passes threshold.
+**Returns:** `MigrationResult`
 
 ```typescript
-if (validator.passes(summary)) {
-  console.log('Migration successful!');
-} else {
-  console.log('Migration needs more work.');
+interface MigrationResult {
+  success: boolean;           // Did we reach threshold?
+  iterations: number;         // Iterations completed
+  finalSuccessRate: number;   // Final success rate (0-1)
+  finalPrompt: string;        // Optimized prompt
+  originalPrompt: string;     // Original prompt
 }
 ```
 
-#### `generateReport(summary: EvaluationSummary): string`
-
-Generate human-readable report.
+**Example:**
 
 ```typescript
-const report = validator.generateReport(summary);
-console.log(report);
+const validator = new Validator({
+  threshold: 0.75,
+  maxIterations: 5,
+  strategy: new ThresholdPlusBonusRoundsStrategy({ bonusRounds: 2 }),
+});
 
-// Output:
-// # Validation Report
-//
-// ## Summary
-// - Total entries evaluated: 50
-// - Passed entries: 48
-// - Pass rate: 96.0%
-// - Average score: 0.943
-// ...
+const result = await validator.migrate(
+  sourceConfig,  // Claude Sonnet config
+  targetConfig,  // GPT-4o-mini config
+  testSuite      // From profiler
+);
+
+if (result.success) {
+  console.log(`Migration successful! Rate: ${result.finalSuccessRate}`);
+  console.log(`Optimized prompt: ${result.finalPrompt}`);
+} else {
+  console.log(`Didn't fully converge. Best: ${result.finalSuccessRate}`);
+}
 ```
 
 ---
 
-## Complete Migration Example
+### SingleAgent
+
+Executes an agent with a given model and prompt.
+
+```typescript
+import { SingleAgent } from '@distill/core';
+
+const agent = new SingleAgent(config: AgentConfig);
+
+const output = await agent.execute(input: { message: string });
+```
+
+**Parameters:**
+- `config` - Agent configuration
+
+**Returns:** `{ response: string, cost: number, latency: number }`
+
+**Example:**
+
+```typescript
+const agent = new SingleAgent({
+  name: 'Test Agent',
+  model: {
+    provider: 'openai',
+    name: 'gpt-4o-mini',
+    temperature: 0,
+  },
+  systemPrompt: 'You are a math tutor.',
+  objective: 'Help with math',
+  successCriteria: ['Accurate'],
+});
+
+const output = await agent.execute({ message: 'What is 2+2?' });
+
+console.log(output.response); // "2+2 equals 4"
+console.log(output.cost);     // 0.0001
+console.log(output.latency);  // 850
+```
+
+---
+
+## Convergence Strategies
+
+Strategies control when to stop the optimization loop.
+
+### ThresholdPlusBonusRounds (Default)
+
+Grants bonus iterations after reaching threshold.
+
+```typescript
+import { ThresholdPlusBonusRoundsStrategy } from '@distill/core';
+
+const strategy = new ThresholdPlusBonusRoundsStrategy({
+  bonusRounds: number, // Extra iterations after threshold
+});
+```
+
+**Behavior:**
+- Iterate until threshold is reached
+- Grant N bonus rounds to explore improvements
+- Return best result found
+
+**Use when:** Balanced approach - not too expensive, room to improve
+
+**Example:**
+
+```typescript
+new Validator({
+  threshold: 0.75,
+  maxIterations: 5,
+  strategy: new ThresholdPlusBonusRoundsStrategy({ bonusRounds: 2 }),
+});
+
+// Iteration 1: 50% → keep going
+// Iteration 2: 75% ✓ → threshold reached, activate bonus
+// Iteration 3: 80% → bonus 1/2
+// Iteration 4: 70% → bonus 2/2, stop
+// Returns: iteration 3 (best: 80%)
+```
+
+---
+
+### AlwaysRunMaxStrategy
+
+Always runs all iterations.
+
+```typescript
+import { AlwaysRunMaxStrategy } from '@distill/core';
+
+const strategy = new AlwaysRunMaxStrategy();
+```
+
+**Behavior:**
+- Always run maxIterations
+- Track best at each step
+- Return the best found
+
+**Use when:** Quality is critical, cost is secondary
+
+**Example:**
+
+```typescript
+new Validator({
+  threshold: 0.75,
+  maxIterations: 5,
+  strategy: new AlwaysRunMaxStrategy(),
+});
+
+// Runs all 5 iterations regardless
+// Returns: best across all 5
+```
+
+---
+
+### EarlyStoppingWithPatienceStrategy
+
+Stops if no improvement for N iterations.
+
+```typescript
+import { EarlyStoppingWithPatienceStrategy } from '@distill/core';
+
+const strategy = new EarlyStoppingWithPatienceStrategy({
+  patience: number,              // Iterations without improvement
+  minImprovement?: number,       // Default: 0.01 (1%)
+});
+```
+
+**Behavior:**
+- If success rate doesn't improve by `minImprovement` for `patience` iterations, stop
+- Return best found so far
+
+**Use when:** Minimize cost, acceptable to miss improvements
+
+**Example:**
+
+```typescript
+new Validator({
+  threshold: 0.75,
+  maxIterations: 10,
+  strategy: new EarlyStoppingWithPatienceStrategy({
+    patience: 3,
+    minImprovement: 0.05, // 5%
+  }),
+});
+
+// Iteration 1: 50%
+// Iteration 2: 75% (improved by 25%, reset patience)
+// Iteration 3: 76% (improved by 1%, but < 5%, patience = 2)
+// Iteration 4: 75% (no improvement, patience = 1)
+// Iteration 5: 74% (no improvement, patience = 0, STOP)
+// Returns: iteration 2 (best: 76%)
+```
+
+---
+
+## Types
+
+### AgentConfig
+
+```typescript
+interface AgentConfig {
+  name: string;
+  description?: string;
+
+  model: {
+    provider: 'anthropic' | 'openai';
+    name: string;
+    temperature?: number;
+  };
+
+  systemPrompt: string;
+
+  objective: string;
+  successCriteria: string[];
+}
+```
+
+### TestSuite
+
+```typescript
+interface TestSuite {
+  id: string;
+  name: string;
+  description?: string;
+  testCases: TestCase[];
+}
+
+interface TestCase {
+  id: string;
+  description?: string;
+  input: { message: string };
+  expectedOutput?: { response: string };
+}
+```
+
+### TestResult
+
+```typescript
+interface TestResult {
+  testCaseId: string;
+  passed: boolean;
+  trace: {
+    input: { message: string };
+    output: { response: string };
+  };
+  actualOutput: { response: string };
+  evaluation?: Evaluation;
+}
+
+interface Evaluation {
+  scores: {
+    correctness: number; // 0-10
+  };
+  reasoning: string;
+  failures: string[];     // Issues found
+  suggestions: string[];  // How to improve
+}
+```
+
+---
+
+## Complete Example
+
+Full migration workflow programmatically:
 
 ```typescript
 import {
   Profiler,
-  Judge,
-  Modifier,
   Validator,
-  createMigratorAgent,
-  type ModelConfig,
-  type ProfileData,
+  ThresholdPlusBonusRoundsStrategy,
+  type AgentConfig,
 } from '@distill/core';
 
-async function migrate(
-  sourceModel: ModelConfig,
-  targetModel: ModelConfig,
-  systemPrompt: string,
-  testInputs: string[],
-  options: {
-    threshold?: number;
-    maxIterations?: number;
-  } = {}
-) {
-  const { threshold = 0.95, maxIterations = 10 } = options;
+// 1. Define source agent (expensive)
+const sourceConfig: AgentConfig = {
+  name: 'Customer Support Bot',
+  model: {
+    provider: 'anthropic',
+    name: 'claude-sonnet-4-20250514',
+    temperature: 0,
+  },
+  systemPrompt: 'You are a helpful customer support agent.',
+  objective: 'Help customers',
+  successCriteria: ['Accurate', 'Friendly', 'Concise'],
+};
 
-  // Step 1: Profile source model
-  console.log('Profiling source model...');
-  const profiler = new Profiler({ model: sourceModel });
-  await profiler.profileBatch(testInputs.map(prompt => ({ prompt })));
-  const profileData = profiler.export();
+// 2. Profile to create gold standard
+const profiler = new Profiler({ agentConfig: sourceConfig });
 
-  // Step 2: Initialize components
-  const judge = new Judge({
-    model: sourceModel,  // Use source model as judge
-    threshold,
-  });
+const testSuite = await profiler.profile([
+  { message: 'What is your return policy?' },
+  { message: 'How do I reset my password?' },
+  { message: 'What payment methods do you accept?' },
+]);
 
-  const modifier = new Modifier({
-    model: sourceModel,
-    maxIterations,
-  });
+console.log(`Created test suite with ${testSuite.testCases.length} cases`);
 
-  const validator = new Validator({
-    judge: { model: sourceModel, threshold },
-    threshold,
-  });
+// 3. Define target agent (cheap)
+const targetConfig: AgentConfig = {
+  ...sourceConfig,
+  name: 'Customer Support Bot (Optimized)',
+  model: {
+    provider: 'openai',
+    name: 'gpt-4o-mini',
+    temperature: 0,
+  },
+};
 
-  // Step 3: Create target agent
-  let currentPrompt = systemPrompt;
-  const agent = createMigratorAgent(targetModel, currentPrompt);
+// 4. Migrate
+const validator = new Validator({
+  threshold: 0.75,
+  maxIterations: 5,
+  strategy: new ThresholdPlusBonusRoundsStrategy({ bonusRounds: 2 }),
+});
 
-  // Step 4: Migration loop
-  for (let iteration = 1; iteration <= maxIterations; iteration++) {
-    console.log(`\nIteration ${iteration}/${maxIterations}`);
+const result = await validator.migrate(sourceConfig, targetConfig, testSuite);
 
-    // Generate outputs
-    const targetOutputs = new Map<string, string>();
-    for (const entry of profileData.entries) {
-      const output = await agent.invoke(entry.input);
-      targetOutputs.set(entry.id, output);
-    }
+// 5. Report results
+console.log('\nMigration Results:');
+console.log(`Success: ${result.success}`);
+console.log(`Iterations: ${result.iterations}`);
+console.log(`Final Rate: ${(result.finalSuccessRate * 100).toFixed(1)}%`);
+console.log(`\nOptimized Prompt:\n${result.finalPrompt}`);
 
-    // Validate
-    const summary = await validator.validate({
-      entries: profileData.entries,
-      targetOutputs,
-    });
-
-    console.log(`  Success rate: ${(summary.passedEntries / summary.totalEntries * 100).toFixed(1)}%`);
-
-    // Check if we're done
-    if (validator.passes(summary)) {
-      console.log('\nMigration successful!');
-      return {
-        success: true,
-        prompt: currentPrompt,
-        iterations: iteration,
-        summary,
-      };
-    }
-
-    // Modify prompt based on failures
-    const failed = summary.results.filter(r => !r.passed);
-    const modification = await modifier.modify(
-      currentPrompt,
-      profileData.entries,
-      failed
-    );
-
-    console.log(`  Modification: ${modification.reasoning}`);
-
-    currentPrompt = modification.modifiedPrompt;
-    agent.setSystemPrompt(currentPrompt);
-  }
-
-  // Max iterations reached
-  console.log('\nMax iterations reached. Migration incomplete.');
-  return {
-    success: false,
-    prompt: currentPrompt,
-    iterations: maxIterations,
-    summary: null,
-  };
-}
-
-// Usage
-const result = await migrate(
-  { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
-  { provider: 'openai', model: 'gpt-4o-mini' },
-  'You are a helpful assistant.',
-  [
-    'What is 2+2?',
-    'Explain gravity in simple terms.',
-    'Write a haiku about programming.',
-  ],
-  { threshold: 0.9, maxIterations: 5 }
-);
-
-if (result.success) {
-  console.log('Optimized prompt:', result.prompt);
-}
-```
-
----
-
-## Error Handling
-
-All methods can throw errors. Wrap in try/catch:
-
-```typescript
-import { Profiler } from '@distill/core';
-
-try {
-  const profiler = new Profiler({
-    model: { provider: 'anthropic', model: 'invalid-model' },
-  });
-  await profiler.profile({ prompt: 'test' });
-} catch (error) {
-  if (error instanceof Error) {
-    console.error(`Error: ${error.message}`);
-  }
-}
-```
-
-Common error scenarios:
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `Unsupported provider` | Invalid provider name | Use 'anthropic' or 'openai' |
-| `API key not found` | Missing env variable | Set ANTHROPIC_API_KEY or OPENAI_API_KEY |
-| `Rate limited` | Too many requests | Add retry logic or reduce batch size |
-| `Invalid JSON` | Judge response parsing | Try different judge model |
-
----
-
-## TypeScript Support
-
-All types are exported:
-
-```typescript
-import type {
-  ModelConfig,
-  ProfileEntry,
-  ProfileData,
-  EvaluationResult,
-  EvaluationSummary,
-  AgentConfig,
-  AgentContext,
-  AgentRole,
-} from '@distill/core';
-```
-
-Zod schemas are also available for runtime validation:
-
-```typescript
-import {
-  ModelConfigSchema,
-  ProfileDataSchema,
-  EvaluationResultSchema,
-} from '@distill/core';
-
-// Validate external data
-const validated = ProfileDataSchema.parse(untrustedData);
+// 6. Save optimized config (optional)
+import { saveAgentConfig } from '@distill/cli/utils/config';
+await saveAgentConfig('agent.optimized.yaml', {
+  ...targetConfig,
+  systemPrompt: result.finalPrompt,
+});
 ```
 
 ---
 
 ## Next Steps
 
-- [Examples](./EXAMPLES.md) - See complete use cases
-- [Concepts](./CONCEPTS.md) - Understand the theory
-- [Contributing](../CONTRIBUTING.md) - Help improve Distill
+- See [EXAMPLES.md](./EXAMPLES.md) for complete walkthrough
+- See [ARCHITECTURE.md](./ARCHITECTURE.md) for system design
+- See [CONCEPTS.md](./CONCEPTS.md) for core ideas

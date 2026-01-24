@@ -61,39 +61,53 @@ cp .env.example .env
 
 ```yaml
 name: "Customer Support Bot"
-description: "Answers product questions"
+description: "Answers product questions accurately and concisely"
 
 model:
   provider: anthropic
   name: claude-sonnet-4-20250514
+  temperature: 0
 
 systemPrompt: |
   You are a helpful customer support agent for TechCorp.
   Answer questions about our products accurately and concisely.
+  Be professional and friendly.
 
-tools:
-  - name: search_docs
-    description: Search product documentation
-
-objective: |
-  Provide accurate, helpful answers to customer questions
+objective: "Provide accurate, helpful answers to customer questions"
 
 successCriteria:
-  - Answers are factually correct
-  - Tone is professional and friendly
-  - Uses search_docs when needed
+  - "Answers are factually correct"
+  - "Tone is professional and friendly"
+  - "Responses are concise"
 ```
 
-**2. Profile your agent** (creates gold standard):
+**2. Create test inputs** (`test-inputs.json`):
 
-```bash
-distill profile -c agent.yaml -n 50
+```json
+[
+  "What is your return policy?",
+  "How do I reset my password?",
+  "What payment methods do you accept?",
+  "Is there a warranty on products?"
+]
 ```
 
-**3. Migrate to cheaper model**:
+**3. Profile your agent** (creates gold standard):
 
 ```bash
-distill migrate -c agent.yaml -t gpt-4o-mini
+distill profile -c agent.yaml -i test-inputs.json -o test-suite.json
+```
+
+**4. Migrate to cheaper model**:
+
+```bash
+distill migrate -c agent.yaml -p test-suite.json -t gpt-4o-mini -o agent.optimized.yaml
+```
+
+**5. Evaluate the result**:
+
+```bash
+distill evaluate -c agent.optimized.yaml -p test-suite.json
 ```
 
 **Output:**
@@ -148,12 +162,19 @@ distill migrate -c agent.yaml -t gpt-4o-mini
 
 ## Features
 
-### Phase 1 (Current)
+### Phase 1 (Current - MVP Complete ✅)
 - **Automatic Profiling**: Run your agent, capture gold standard outputs
 - **LLM-as-Judge Evaluation**: Smart comparison of outputs, not just string matching
 - **Iterative Prompt Optimization**: Automatically refines prompts based on failures
-- **Multi-Provider Support**: Anthropic, OpenAI (more coming)
-- **Cost Tracking**: Know exactly what you're saving
+- **Convergence Strategies**: Choose how to stop optimization
+  - `ThresholdPlusBonusRounds` (default): Extra iterations after reaching threshold
+  - `AlwaysRunMax`: Always run all iterations, return best result
+  - `EarlyStoppingWithPatience`: Stop early if no improvement
+- **Anti-Overfitting**: Modifier learns general strategies, not specific test answers
+- **Multi-Provider Support**: Anthropic (Claude), OpenAI (GPT)
+- **CLI Tools**: `profile`, `migrate`, `evaluate` commands
+- **LangGraph Orchestration**: Flexible graph-based migration flow
+- **Cost Tracking**: Real execution traces with token counts
 
 ### Phase 2 (Roadmap)
 - **Multi-Agent Decomposition**: Automatically split complex agents into specialized sub-agents
@@ -249,12 +270,15 @@ Turborepo caches build outputs - subsequent builds are near-instant if nothing c
 
 ## Roadmap
 
-### v0.1 - MVP (Phase 1)
-- [x] Core abstractions (Agent, Profiler, Judge)
+### v0.1 - MVP (Phase 1) ✅ COMPLETE
+- [x] Core abstractions (SingleAgent, Profiler, Judge, Modifier, Validator)
 - [x] CLI commands (profile, migrate, evaluate)
-- [x] Prompt optimization loop
-- [ ] LangSmith integration
-- [ ] Comprehensive test suite
+- [x] Prompt optimization loop with LangGraph
+- [x] Convergence strategies (3 types)
+- [x] Anti-overfitting measures
+- [x] LangSmith integration (optional tracing)
+- [x] Working examples
+- [ ] Comprehensive test suite (vitest)
 
 ### v0.2 - Production Ready
 - [ ] Parallel evaluation runs

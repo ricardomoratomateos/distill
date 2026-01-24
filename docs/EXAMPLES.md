@@ -1,627 +1,392 @@
 # Examples
 
-This guide walks through a complete migration scenario: taking a CrossFit class booking agent from Claude Sonnet to GPT-4o-mini.
+This guide walks through a complete migration using the current Distill MVP.
 
-## Case Study: CrossFit Booking Agent
+## Case Study: Customer Support Bot
 
 ### The Problem
 
-You've built an agent that books CrossFit classes. It works great with Claude Sonnet:
+You've built a customer support agent that works great with Claude Sonnet:
+- Answers questions accurately
+- Maintains professional tone
+- Provides concise responses
+- **Cost: $0.015 per interaction**
 
-- Understands natural language requests ("Book me into the 6am WOD tomorrow")
-- Handles edge cases (class full, conflicting bookings)
-- Uses tools to check availability and make reservations
-- **Cost: $0.025 per interaction**
+At 10,000 interactions/month, that's **$150/month**. With GPT-4o-mini, it could be **$1.50/month**.
 
-At 500 interactions/day, that's **$375/month**. With GPT-4o-mini, it could be **$37/month**.
+But when you just swap the model, quality drops. The cheaper model:
+- Gives overly long responses
+- Misses the professional tone
+- Sometimes includes irrelevant information
 
-But when you just swap the model, success rate drops from 94% to 61%. The cheaper model:
-- Misses implicit context ("tomorrow" vs specific date)
-- Forgets to confirm booking details
-- Calls tools in wrong order
-
-Manually fixing this would take 10-15 hours of prompt engineering.
-
-**With Distill: 15 minutes.**
+**With Distill: Automate the optimization.**
 
 ---
 
 ## Step 1: Define Your Agent
 
-Create `crossfit-agent.yaml`:
+Create `agent.yaml`:
 
 ```yaml
-name: "CrossFit Booking Agent"
-version: "1.0.0"
-description: "Books CrossFit classes based on natural language requests"
+name: "Customer Support Bot"
+description: "Answers product questions accurately and concisely"
 
-# Source model (the expensive one that works)
 model:
   provider: anthropic
   name: claude-sonnet-4-20250514
-  temperature: 0.3
-  maxTokens: 1024
+  temperature: 0
 
-# The system prompt
 systemPrompt: |
-  You are a CrossFit gym booking assistant. Help members book classes.
+  You are a helpful customer support agent for TechCorp.
+  Answer questions about our products accurately and concisely.
+  Be professional and friendly.
 
-  Available class types:
-  - WOD (Workout of the Day) - General fitness
-  - Olympic Lifting - Technique focused
-  - Gymnastics - Skills like pull-ups, handstands
-  - Open Gym - Self-directed training
-
-  When booking:
-  1. Confirm the class type and time
-  2. Check availability
-  3. Make the reservation
-  4. Provide confirmation details
-
-  Be friendly but concise. Members are busy.
-
-# Tools the agent can use
-tools:
-  - name: check_availability
-    description: Check if a class has open spots
-    parameters:
-      type: object
-      required: [date, time, classType]
-      properties:
-        date:
-          type: string
-          description: Date in YYYY-MM-DD format
-        time:
-          type: string
-          description: Time in HH:MM format (24h)
-        classType:
-          type: string
-          enum: [WOD, Olympic Lifting, Gymnastics, Open Gym]
-
-  - name: make_reservation
-    description: Book a spot in a class
-    parameters:
-      type: object
-      required: [date, time, classType, memberId]
-      properties:
-        date:
-          type: string
-        time:
-          type: string
-        classType:
-          type: string
-        memberId:
-          type: string
-
-  - name: get_member_schedule
-    description: Get member's existing bookings
-    parameters:
-      type: object
-      required: [memberId]
-      properties:
-        memberId:
-          type: string
-
-# What success looks like
-objective: |
-  Successfully book the requested class, handling edge cases gracefully
+objective: "Provide accurate, helpful answers to customer questions"
 
 successCriteria:
-  - Correctly interprets user intent (class type, date, time)
-  - Checks availability before booking
-  - Confirms booking with all details
-  - Handles conflicts (already booked, class full) appropriately
-
-# Output structure
-outputSchema:
-  type: object
-  required: [status, message]
-  properties:
-    status:
-      type: string
-      enum: [success, failed, needs_clarification]
-    message:
-      type: string
-    bookingId:
-      type: string
-    classDetails:
-      type: object
-      properties:
-        date: { type: string }
-        time: { type: string }
-        type: { type: string }
-
-# Constraints for migration
-constraints:
-  targetSuccessRate: 0.95
-  maxCostPerRun: 0.005
-  maxIterations: 10
+  - "Answers are factually correct"
+  - "Tone is professional and friendly"
+  - "Responses are concise"
 ```
 
 ---
 
-## Step 2: Create Test Cases
+## Step 2: Create Test Inputs
 
-The profiler will generate these automatically, but you can also provide seed cases.
-
-Create `test-cases.json`:
+Create `test-inputs.json` with representative questions:
 
 ```json
 [
-  {
-    "id": "simple-booking",
-    "input": "Book me into tomorrow's 6am WOD",
-    "context": {
-      "memberId": "member_123",
-      "currentDate": "2024-01-15"
-    },
-    "category": "happy-path"
-  },
-  {
-    "id": "ambiguous-time",
-    "input": "I want to do Olympic lifting this week",
-    "context": {
-      "memberId": "member_123",
-      "currentDate": "2024-01-15"
-    },
-    "category": "clarification-needed"
-  },
-  {
-    "id": "class-full",
-    "input": "Sign me up for the 5pm WOD today",
-    "context": {
-      "memberId": "member_123",
-      "currentDate": "2024-01-15",
-      "mockResponses": {
-        "check_availability": { "available": false, "spotsLeft": 0 }
-      }
-    },
-    "category": "edge-case"
-  },
-  {
-    "id": "already-booked",
-    "input": "Book the 7am gymnastics class tomorrow",
-    "context": {
-      "memberId": "member_123",
-      "currentDate": "2024-01-15",
-      "mockResponses": {
-        "get_member_schedule": {
-          "bookings": [
-            { "date": "2024-01-16", "time": "07:00", "type": "WOD" }
-          ]
-        }
-      }
-    },
-    "category": "conflict"
-  },
-  {
-    "id": "casual-language",
-    "input": "hey can u get me into lifting tmrw morning?",
-    "context": {
-      "memberId": "member_456",
-      "currentDate": "2024-01-15"
-    },
-    "category": "informal"
-  }
+  "What is 2+2?",
+  "What is the capital of France?",
+  "Explain photosynthesis in one sentence.",
+  "What is the Pythagorean theorem?"
 ]
 ```
 
+**Tips for good test inputs:**
+- Cover different complexity levels (simple, medium, complex)
+- Include edge cases
+- Representative of real usage
+- 10-50 test cases for most agents
+
 ---
 
-## Step 3: Profile the Source Model
+## Step 3: Profile Your Agent
 
-Run the profiler to establish the gold standard:
+Create the gold standard test suite:
 
 ```bash
-distill profile \
-  --config crossfit-agent.yaml \
-  --test-cases test-cases.json \
-  --runs 50 \
-  --output profile-data.json
+node --env-file=.env packages/cli/dist/index.js profile \
+  -c agent.yaml \
+  -i test-inputs.json \
+  -o test-suite.json
 ```
 
 **Output:**
-
 ```
-🔬 Distill Profiler v0.1.0
-
-📋 Loading agent: CrossFit Booking Agent
+🔬 Profiling agent: Customer Support Bot
    Model: claude-sonnet-4-20250514
-   Tools: 3 configured
+   Executing 4 test cases...
+   [1/4] Executing...
+      ✓ Cost: $0.0003, Latency: 2366ms
+   [2/4] Executing...
+      ✓ Cost: $0.0002, Latency: 1810ms
+   [3/4] Executing...
+      ✓ Cost: $0.0006, Latency: 1975ms
+   [4/4] Executing...
+      ✓ Cost: $0.0030, Latency: 3992ms
+✅ Profiling complete: 4 test cases captured
 
-📊 Profiling with 50 runs...
-
-   [████████████████████████████████████████] 50/50
-
-✅ Profiling complete!
-
-   ┌────────────────────────────────────────┐
-   │  BASELINE METRICS                      │
-   ├────────────────────────────────────────┤
-   │  Total runs:        50                 │
-   │  Successful:        47 (94%)           │
-   │  Failed:            3 (6%)             │
-   │                                        │
-   │  Avg cost/run:      $0.0243            │
-   │  Avg latency:       2.1s               │
-   │  Avg tool calls:    2.3                │
-   │                                        │
-   │  Category breakdown:                   │
-   │  • happy-path:      100% success       │
-   │  • clarification:   90% success        │
-   │  • edge-case:       85% success        │
-   │  • conflict:        95% success        │
-   │  • informal:        90% success        │
-   └────────────────────────────────────────┘
-
-📁 Saved: profile-data.json
-📊 LangSmith dataset: crossfit-agent-gold-standard
+Test Suite Created:
+  ID: abc123...
+  Name: Customer Support Bot - Gold Standard
+  Test cases: 4
+  Saved to: test-suite.json
 ```
+
+The test suite now contains the "gold standard" outputs from Claude Sonnet.
 
 ---
 
-## Step 4: Run Migration
+## Step 4: Migrate to Cheaper Model
 
-Now migrate to GPT-4o-mini:
+Run the migration with iterative optimization:
 
 ```bash
-distill migrate \
-  --config crossfit-agent.yaml \
-  --profile profile-data.json \
-  --target gpt-4o-mini \
-  --target-provider openai \
-  --threshold 0.95 \
-  --max-iterations 10
+node --env-file=.env packages/cli/dist/index.js migrate \
+  -c agent.yaml \
+  -p test-suite.json \
+  -t gpt-4o-mini \
+  --threshold 0.75 \
+  --max-iterations 5 \
+  --strategy threshold-bonus \
+  --bonus-rounds 2 \
+  -o agent.optimized.yaml
+```
+
+**Options explained:**
+- `-t gpt-4o-mini` - Target model to migrate to
+- `--threshold 0.75` - Need 75% of tests passing
+- `--max-iterations 5` - Max optimization rounds
+- `--strategy threshold-bonus` - Use bonus rounds after reaching threshold
+- `--bonus-rounds 2` - Grant 2 extra iterations after threshold
+
+**Output:**
+```
+Migration Configuration:
+  Source:     claude-sonnet-4-20250514
+  Target:     gpt-4o-mini
+  Threshold:  75%
+  Max iters:  5
+  Strategy:   threshold-bonus
+
+🚀 Starting migration...
+
+🔄 Iteration 1/5
+   Testing current prompt...
+   Evaluating with judge...
+   Result: 2/4 passed (50.0%)
+   Strategy decision: Seeking threshold (50.0% < 75.0%)
+   Generating improved prompt...
+   ✓ Prompt updated
+
+🔄 Iteration 2/5
+   Testing current prompt...
+   Evaluating with judge...
+   Result: 3/4 passed (75.0%)
+   ✓ Threshold reached at iteration 2
+   Granting 2 bonus rounds (requested 2, remaining 3)
+   Strategy decision: Bonus round 1/2
+   Generating improved prompt...
+   ✓ Prompt updated
+
+🔄 Iteration 3/5
+   Testing current prompt...
+   Evaluating with judge...
+   Result: 2/4 passed (50.0%)
+   Strategy decision: Bonus round 2/2
+   Generating improved prompt...
+   ✓ Prompt updated
+
+🔄 Iteration 4/5
+   Testing current prompt...
+   Evaluating with judge...
+   Result: 4/4 passed (100.0%)
+   Strategy decision: Completed 2 bonus rounds after threshold
+
+🏁 Migration complete!
+   Best found: iteration 4 with 100.0%
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Migration Results
+
+✅ SUCCESS
+Iterations: 4
+Success Rate: 100.0%
+Target: 75.0%
+
+Prompt Evolution:
+Original:
+  "You are a helpful customer support agent for TechCorp..."
+Optimized:
+  "You are a helpful customer support agent for TechCorp.
+   Answer questions with appropriate depth based on complexity.
+
+   For simple questions: Provide direct, concise answers.
+   For complex topics: Include definitions, examples, and context.
+
+   Always maintain professional and friendly tone."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Optimized config saved to: agent.optimized.yaml
+```
+
+**What happened:**
+1. Started with basic prompt
+2. Iteration 1: 50% success → Modifier improves prompt
+3. Iteration 2: 75% success → Threshold reached! Activate bonus rounds
+4. Iteration 3: 50% success → Regressed (normal)
+5. Iteration 4: 100% success → Best so far
+6. **Returns iteration 4** (best), not iteration 5 (last)
+
+---
+
+## Step 5: Evaluate the Result
+
+Test the optimized agent:
+
+```bash
+node --env-file=.env packages/cli/dist/index.js evaluate \
+  -c agent.optimized.yaml \
+  -p test-suite.json
 ```
 
 **Output:**
-
 ```
-🚀 Distill Migration v0.1.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Evaluation Results
 
-📋 Source: claude-sonnet-4-20250514 (94% success, $0.024/run)
-🎯 Target: gpt-4o-mini
-📊 Test cases: 50
+Agent: Customer Support Bot (Optimized)
+Model: gpt-4o-mini
+Test cases: 4
+Passed: 3
+Failed: 1
+Pass rate: 75.0%
 
-Starting migration...
+Failed Test Cases:
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Test case 1: What is 2+2?...
+   Score: 6/10
+   Issues: Response too verbose for simple question
+   Suggestions: Match response length to question complexity
 
-Iteration 1/10
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-   Running target model...
-   [████████████████████████████████████████] 50/50
-
-   📊 Results: 31/50 passed (62%)
-
-   🔍 Judge Analysis:
-      • 12 failures: Date parsing ("tomorrow" not converted)
-      • 5 failures: Missing confirmation step
-      • 2 failures: Wrong tool call order
-
-   💡 Modifier Proposal:
-      Adding explicit date handling instructions and step-by-step workflow
-
-   Applying modification...
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Iteration 2/10
-
-   Running target model...
-   [████████████████████████████████████████] 50/50
-
-   📊 Results: 39/50 passed (78%)
-
-   🔍 Judge Analysis:
-      • 6 failures: Informal language not understood
-      • 3 failures: Conflict handling incomplete
-      • 2 failures: Output format inconsistent
-
-   💡 Modifier Proposal:
-      Adding examples of informal language + explicit output format
-
-   Applying modification...
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Iteration 3/10
-
-   Running target model...
-   [████████████████████████████████████████] 50/50
-
-   📊 Results: 45/50 passed (90%)
-
-   🔍 Judge Analysis:
-      • 3 failures: Edge cases with full classes
-      • 2 failures: Multi-step reasoning gaps
-
-   💡 Modifier Proposal:
-      Adding chain-of-thought for complex scenarios
-
-   Applying modification...
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Iteration 4/10
-
-   Running target model...
-   [████████████████████████████████████████] 50/50
-
-   📊 Results: 48/50 passed (96%) ✓
-
-   🎉 Target success rate achieved!
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✨ MIGRATION COMPLETE
-
-   ┌─────────────────────────────────────────────────────────┐
-   │                                                          │
-   │   BEFORE                 AFTER                          │
-   │   ──────                 ─────                          │
-   │   claude-sonnet    →    gpt-4o-mini                     │
-   │   $0.024/run       →    $0.003/run                      │
-   │   94% success      →    96% success                     │
-   │   2.1s latency     →    0.9s latency                    │
-   │                                                          │
-   │   ────────────────────────────────────────────────────  │
-   │                                                          │
-   │   💰 SAVINGS                                             │
-   │   Cost reduction:    87.5%                              │
-   │   At 500 runs/day:   $315/month saved                   │
-   │                                                          │
-   │   📈 IMPROVEMENTS                                        │
-   │   Success rate:      +2%                                │
-   │   Latency:           -57%                               │
-   │                                                          │
-   └─────────────────────────────────────────────────────────┘
-
-📁 Files saved:
-   • crossfit-agent.optimized.yaml (new config)
-   • migration-report.json (detailed analysis)
-   • prompt-diff.md (before/after comparison)
+⚠️  Evaluation needs improvement
 ```
 
 ---
 
-## Step 5: Review the Optimized Prompt
+## Understanding Convergence Strategies
 
-Check `prompt-diff.md` to see what changed:
+Distill offers 3 strategies for deciding when to stop optimization:
 
-```markdown
-# Prompt Modifications
+### 1. ThresholdPlusBonusRounds (Default)
 
-## Original Prompt (claude-sonnet-4-20250514)
-
-You are a CrossFit gym booking assistant. Help members book classes.
-...
-Be friendly but concise. Members are busy.
-
-## Optimized Prompt (gpt-4o-mini)
-
-You are a CrossFit gym booking assistant. Help members book classes.
-
-## IMPORTANT: Date Handling
-- "tomorrow" = current date + 1 day
-- "this week" = ask which specific day
-- "morning" = 06:00-09:00, "afternoon" = 12:00-15:00, "evening" = 17:00-20:00
-- Always convert to YYYY-MM-DD format before calling tools
-
-## Language Understanding
-Members may use informal language. Examples:
-- "tmrw" = tomorrow
-- "lifting" = Olympic Lifting
-- "can u" = can you
-
-## Workflow (follow exactly)
-1. Parse the request → identify: class type, date, time
-2. If anything is ambiguous → ask for clarification
-3. Call check_availability with exact parameters
-4. If available → call make_reservation
-5. If not available → suggest alternatives
-6. Always end with confirmation or clear next steps
-
-## Output Format
-Always respond with this structure:
-{
-  "status": "success" | "failed" | "needs_clarification",
-  "message": "Human-readable response",
-  "bookingId": "...",  // if successful
-  "classDetails": { "date": "...", "time": "...", "type": "..." }
-}
-
-## Edge Case Handling
-<think>
-Before responding to complex requests, reason through:
-1. What exactly is the user asking for?
-2. Do I have all required information?
-3. What could go wrong?
-</think>
-
-Available class types:
-- WOD (Workout of the Day) - General fitness
-...
-```
-
-**Key optimizations made:**
-1. Explicit date parsing rules (cheap models need this)
-2. Informal language examples (few-shot learning)
-3. Step-by-step workflow (reduces reasoning errors)
-4. Output format template (ensures consistency)
-5. Chain-of-thought for edge cases (improves complex reasoning)
-
----
-
-## Step 6: Validate in Production
-
-Before deploying, run a final validation:
+Gives extra iterations after reaching threshold:
 
 ```bash
-distill evaluate \
-  --config crossfit-agent.optimized.yaml \
-  --profile profile-data.json \
-  --runs 100 \
-  --output validation-report.json
+--strategy threshold-bonus --bonus-rounds 2
 ```
 
-**Output:**
+**Behavior:**
+- Iterate until threshold is reached
+- Grant N bonus rounds to potentially improve further
+- Return best result across all iterations
 
+**Use when:** You want a balanced approach (not too expensive, but room to improve)
+
+### 2. AlwaysRunMax
+
+Always runs all iterations:
+
+```bash
+--strategy always-max
 ```
-🔍 Distill Evaluation v0.1.0
 
-📋 Agent: CrossFit Booking Agent (optimized)
-   Model: gpt-4o-mini
+**Behavior:**
+- Run all maxIterations regardless of success
+- Track best at each step
+- Return the best found
 
-📊 Running 100 test cases...
+**Use when:** Quality is critical, cost is secondary
 
-   [████████████████████████████████████████] 100/100
+### 3. EarlyStoppingWithPatience
 
-✅ Evaluation complete!
+Stops early if no improvement:
 
-   ┌────────────────────────────────────────┐
-   │  VALIDATION RESULTS                    │
-   ├────────────────────────────────────────┤
-   │  Total runs:        100                │
-   │  Passed:            96 (96%)           │
-   │  Failed:            4 (4%)             │
-   │                                        │
-   │  Category breakdown:                   │
-   │  • happy-path:      100% (30/30)       │
-   │  • clarification:   93% (28/30)        │
-   │  • edge-case:       90% (18/20)        │
-   │  • conflict:        100% (15/15)       │
-   │  • informal:        100% (5/5)         │
-   │                                        │
-   │  vs Gold Standard:                     │
-   │  • Semantic match:  0.94 avg           │
-   │  • Format match:    0.98 avg           │
-   │  • Tool usage:      0.96 avg           │
-   └────────────────────────────────────────┘
-
-   ⚠️  4 failures analyzed:
-      • 2x edge case: very unusual phrasing
-      • 2x clarification: ambiguous multi-class requests
-
-   💡 Recommendation: 96% meets target. Safe to deploy.
-
-📁 Saved: validation-report.json
+```bash
+--strategy early-stop --patience 3
 ```
+
+**Behavior:**
+- If no improvement for N iterations, stop
+- Return best found so far
+
+**Use when:** You want to minimize cost, acceptable to miss potential improvements
 
 ---
 
-## Step 7: Deploy
+## Tips for Best Results
 
-Use the optimized config in your application:
+### Good Test Suites
+
+✅ **Do:**
+- 10-50 diverse test cases
+- Cover edge cases
+- Include different complexity levels
+- Use real examples from production
+
+❌ **Don't:**
+- Too few tests (< 5) - won't generalize
+- Too many similar tests - overfitting
+- Synthetic/made-up data - won't match real usage
+
+### Threshold Selection
+
+- `0.50` (50%) - Very lenient, fast iterations
+- `0.75` (75%) - **Recommended starting point**
+- `0.90` (90%) - Strict, may need many iterations
+- `0.95` (95%) - Very strict, expensive
+
+**Start at 75%, adjust based on results.**
+
+### Anti-Overfitting
+
+Distill automatically prevents overfitting by:
+1. **Modifier sees patterns, not answers** - Only sees failure types, not specific test cases
+2. **General strategies** - Learns transferable approaches, not memorized answers
+3. **Best result selection** - Returns best iteration, handles temporary regressions
+
+---
+
+## Programmatic Usage
+
+You can also use Distill programmatically:
 
 ```typescript
-import { createAgent } from '@distill/core';
-import optimizedConfig from './crossfit-agent.optimized.yaml';
+import {
+  Profiler,
+  Validator,
+  ThresholdPlusBonusRoundsStrategy,
+  type AgentConfig,
+} from '@distill/core';
 
-const agent = createAgent(optimizedConfig);
+// Define agent
+const sourceConfig: AgentConfig = {
+  name: 'My Agent',
+  model: {
+    provider: 'anthropic',
+    name: 'claude-sonnet-4-20250514',
+    temperature: 0,
+  },
+  systemPrompt: 'You are a helpful assistant.',
+  objective: 'Help users',
+  successCriteria: ['Accurate', 'Concise'],
+};
 
-// Same interface as before
-const result = await agent.execute({
-  input: "Book me into tomorrow's 6am WOD",
-  context: { memberId: "member_123" }
+// Profile
+const profiler = new Profiler({ agentConfig: sourceConfig });
+const testSuite = await profiler.profile([
+  { message: 'Hello' },
+  { message: 'What is 2+2?' },
+]);
+
+// Migrate
+const targetConfig = {
+  ...sourceConfig,
+  model: { provider: 'openai', name: 'gpt-4o-mini', temperature: 0 },
+};
+
+const validator = new Validator({
+  threshold: 0.75,
+  maxIterations: 5,
+  strategy: new ThresholdPlusBonusRoundsStrategy({ bonusRounds: 2 }),
 });
-```
 
----
+const result = await validator.migrate(sourceConfig, targetConfig, testSuite);
 
-## Understanding the Results
-
-### What the Modifier Did
-
-| Iteration | Success | Key Change |
-|-----------|---------|------------|
-| 0 (baseline) | 62% | No changes |
-| 1 | 78% | Added date parsing rules |
-| 2 | 90% | Added informal language examples |
-| 3 | 96% | Added chain-of-thought for edge cases |
-
-### Why It Worked
-
-1. **Explicit > Implicit**: Sonnet infers "tomorrow" means +1 day. 4o-mini needs to be told.
-
-2. **Examples > Rules**: "Handle informal language" doesn't help. Showing "tmrw = tomorrow" does.
-
-3. **Structure > Freedom**: Step-by-step workflow prevents the model from skipping steps.
-
-4. **Think out loud**: `<think>` tags force the model to reason before acting.
-
-### Cost Breakdown
-
-| Metric | Sonnet | 4o-mini | Savings |
-|--------|--------|---------|---------|
-| Input tokens | ~500 | ~800* | - |
-| Output tokens | ~200 | ~250* | - |
-| Cost/run | $0.024 | $0.003 | 87.5% |
-| Monthly (500/day) | $360 | $45 | $315 |
-
-*Optimized prompt is longer, but 4o-mini is 100x cheaper per token.
-
----
-
-## Troubleshooting
-
-### Migration stuck at low success rate
-
-```bash
-# Try with more iterations
-distill migrate --max-iterations 15
-
-# Or lower the threshold temporarily
-distill migrate --threshold 0.90
-```
-
-### Judge seems too strict/lenient
-
-```bash
-# Customize judge criteria
-distill migrate --judge-criteria criteria.yaml
-```
-
-```yaml
-# criteria.yaml
-criteria:
-  - name: semantic_equivalence
-    weight: 0.4
-    description: "Core meaning is preserved"
-  - name: format_compliance
-    weight: 0.3
-    description: "Output matches expected structure"
-  - name: tool_usage
-    weight: 0.3
-    description: "Correct tools called with correct params"
-```
-
-### Need to exclude certain test cases
-
-```bash
-# Filter by category
-distill migrate --exclude-categories "edge-case,experimental"
+console.log(`Success: ${result.success}`);
+console.log(`Final rate: ${result.finalSuccessRate}`);
+console.log(`Optimized prompt: ${result.finalPrompt}`);
 ```
 
 ---
 
 ## Next Steps
 
-- [API Reference](./API.md) - Use Distill programmatically
-- [Concepts](./CONCEPTS.md) - Understand the theory
-- [Architecture](./ARCHITECTURE.md) - How it all fits together
-
----
-
-## Real-World Results
-
-Teams using Distill have reported:
-
-| Use Case | Source | Target | Savings |
-|----------|--------|--------|---------|
-| Customer support | Sonnet | 4o-mini | 89% |
-| Code review | GPT-4 | 4o-mini | 92% |
-| Data extraction | Sonnet | Haiku | 85% |
-| Content moderation | GPT-4 | 4o-mini | 94% |
-
-Average migration time: **12 minutes** (vs 10-15 hours manual).
+- See [API.md](./API.md) for full API reference
+- See [ARCHITECTURE.md](./ARCHITECTURE.md) for system design
+- See [CONCEPTS.md](./CONCEPTS.md) for core concepts
