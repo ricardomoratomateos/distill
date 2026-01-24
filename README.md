@@ -93,7 +93,7 @@ Create test inputs (`test-inputs.json`):
 
 Profile to create gold standard:
 ```bash
-distill profile -c agent.yaml -i test-inputs.json -o test-suite.json
+pnpm profile -c agent.yaml -i test-inputs.json -o test-suite.json
 ```
 
 **2b. Option B: Use existing gold standard** (manual - no cost):
@@ -115,7 +115,7 @@ If you already have gold standard responses from production:
 
 Create test suite directly:
 ```bash
-distill create-test-suite -i manual-test-cases.json -o test-suite.json
+pnpm create-test-suite -i manual-test-cases.json -o test-suite.json
 ```
 
 **3. Migrate to cheaper model**:
@@ -123,13 +123,13 @@ distill create-test-suite -i manual-test-cases.json -o test-suite.json
 **4. Migrate to cheaper model**:
 
 ```bash
-distill migrate -c agent.yaml -p test-suite.json -t gpt-4o-mini -o agent.optimized.yaml
+pnpm migrate -c agent.yaml -p test-suite.json -t gpt-4o-mini -o agent.optimized.yaml
 ```
 
 **5. Evaluate the result**:
 
 ```bash
-distill evaluate -c agent.optimized.yaml -p test-suite.json
+pnpm evaluate -c agent.optimized.yaml -p test-suite.json
 ```
 
 **Output:**
@@ -248,6 +248,33 @@ interface Agent {
 ```
 
 → [Full architecture docs](./docs/ARCHITECTURE.md)
+
+## CLI Usage
+
+Distill provides convenient npm scripts for all commands:
+
+```bash
+# Profile an agent (creates gold standard)
+pnpm profile -c agent.yaml -i test-inputs.json -o test-suite.json
+
+# Create test suite from manual gold standards (no profiling cost!)
+pnpm create-test-suite -i manual-test-cases.json -o test-suite.json
+
+# Migrate to cheaper model
+pnpm migrate -c agent.yaml -p test-suite.json -t gpt-4o-mini
+
+# Evaluate results
+pnpm evaluate -c agent.optimized.yaml -p test-suite.json
+```
+
+**Available scripts:**
+- `pnpm distill <command>` - Run any CLI command
+- `pnpm profile` - Shortcut for profile command
+- `pnpm create-test-suite` - Shortcut for create-test-suite
+- `pnpm migrate` - Shortcut for migrate command
+- `pnpm evaluate` - Shortcut for evaluate command
+
+All commands automatically load `.env` file for API keys.
 
 ## Documentation
 

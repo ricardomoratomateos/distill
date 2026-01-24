@@ -71,7 +71,7 @@ Create `test-inputs.json`:
 
 Run profiler:
 ```bash
-node --env-file=.env packages/cli/dist/index.js profile \
+pnpm profile \
   -c agent.yaml \
   -i test-inputs.json \
   -o test-suite.json
@@ -103,7 +103,7 @@ Create `manual-test-cases.json`:
 
 Create test suite directly:
 ```bash
-node --env-file=.env packages/cli/dist/index.js create-test-suite \
+pnpm create-test-suite \
   -i manual-test-cases.json \
   -o test-suite.json \
   -n "My Gold Standard"
@@ -117,7 +117,7 @@ Test Suite Created:
   Test cases: 2
   Saved to: test-suite.json
 
-✓ Ready to use with distill migrate
+✓ Ready to use with pnpm migrate
 ```
 
 **Cost**: FREE - no model execution needed!
@@ -136,7 +136,7 @@ Test Suite Created:
 Once you have your test suite (from either option), run the migration:
 
 ```bash
-node --env-file=.env packages/cli/dist/index.js migrate \
+pnpm migrate \
   -c agent.yaml \
   -p test-suite.json \
   -t gpt-4o-mini \
@@ -240,7 +240,7 @@ Optimized config saved to: agent.optimized.yaml
 Test the optimized agent:
 
 ```bash
-node --env-file=.env packages/cli/dist/index.js evaluate \
+pnpm evaluate \
   -c agent.optimized.yaml \
   -p test-suite.json
 ```
