@@ -81,22 +81,44 @@ successCriteria:
   - "Responses are concise"
 ```
 
-**2. Create test inputs** (`test-inputs.json`):
+**2a. Option A: Profile with expensive model** (automatic):
 
+Create test inputs (`test-inputs.json`):
 ```json
 [
   "What is your return policy?",
-  "How do I reset my password?",
-  "What payment methods do you accept?",
-  "Is there a warranty on products?"
+  "How do I reset my password?"
 ]
 ```
 
-**3. Profile your agent** (creates gold standard):
-
+Profile to create gold standard:
 ```bash
 distill profile -c agent.yaml -i test-inputs.json -o test-suite.json
 ```
+
+**2b. Option B: Use existing gold standard** (manual - no cost):
+
+If you already have gold standard responses from production:
+
+```json
+[
+  {
+    "input": { "message": "What is your return policy?" },
+    "expectedOutput": { "response": "Our return policy allows..." }
+  },
+  {
+    "input": { "message": "How do I reset my password?" },
+    "expectedOutput": { "response": "To reset your password..." }
+  }
+]
+```
+
+Create test suite directly:
+```bash
+distill create-test-suite -i manual-test-cases.json -o test-suite.json
+```
+
+**3. Migrate to cheaper model**:
 
 **4. Migrate to cheaper model**:
 
@@ -164,6 +186,7 @@ distill evaluate -c agent.optimized.yaml -p test-suite.json
 
 ### Phase 1 (Current - MVP Complete ✅)
 - **Automatic Profiling**: Run your agent, capture gold standard outputs
+- **Manual Test Suites**: Use your existing gold standards from production (no profiling cost!)
 - **LLM-as-Judge Evaluation**: Smart comparison of outputs, not just string matching
 - **Iterative Prompt Optimization**: Automatically refines prompts based on failures
 - **Convergence Strategies**: Choose how to stop optimization

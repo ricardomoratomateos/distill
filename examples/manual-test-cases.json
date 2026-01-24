@@ -1,0 +1,38 @@
+[
+  {
+    "input": {
+      "message": "What is 2+2?"
+    },
+    "expectedOutput": {
+      "response": "2 + 2 = 4"
+    },
+    "description": "Simple arithmetic"
+  },
+  {
+    "input": {
+      "message": "What is the capital of France?"
+    },
+    "expectedOutput": {
+      "response": "The capital of France is Paris."
+    },
+    "description": "Basic geography knowledge"
+  },
+  {
+    "input": {
+      "message": "Explain photosynthesis in one sentence."
+    },
+    "expectedOutput": {
+      "response": "Photosynthesis is the process by which plants use sunlight, carbon dioxide, and water to produce glucose (sugar) and oxygen."
+    },
+    "description": "Concise scientific explanation"
+  },
+  {
+    "input": {
+      "message": "What is the Pythagorean theorem?"
+    },
+    "expectedOutput": {
+      "response": "The Pythagorean theorem states that in a right triangle, the square of the hypotenuse equals the sum of the squares of the other two sides: a² + b² = c²"
+    },
+    "description": "Mathematical concept"
+  }
+]

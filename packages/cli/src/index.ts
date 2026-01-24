@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { profileCommand } from './commands/profile.js';
+import { createTestSuiteCommand } from './commands/create-test-suite.js';
 import { migrateCommand } from './commands/migrate.js';
 import { evaluateCommand } from './commands/evaluate.js';
 import 'dotenv/config';
@@ -14,6 +15,7 @@ program
 
 // Register commands
 program.addCommand(profileCommand);
+program.addCommand(createTestSuiteCommand);
 program.addCommand(migrateCommand);
 program.addCommand(evaluateCommand);
 

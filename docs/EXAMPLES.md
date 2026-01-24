@@ -51,10 +51,15 @@ successCriteria:
 
 ---
 
-## Step 2: Create Test Inputs
+## Step 2: Create Test Suite
 
-Create `test-inputs.json` with representative questions:
+You have **two options** for creating a test suite:
 
+### Option A: Profile with Expensive Model (Automatic)
+
+If you don't have gold standard responses yet, profile your expensive model:
+
+Create `test-inputs.json`:
 ```json
 [
   "What is 2+2?",
@@ -64,18 +69,7 @@ Create `test-inputs.json` with representative questions:
 ]
 ```
 
-**Tips for good test inputs:**
-- Cover different complexity levels (simple, medium, complex)
-- Include edge cases
-- Representative of real usage
-- 10-50 test cases for most agents
-
----
-
-## Step 3: Profile Your Agent
-
-Create the gold standard test suite:
-
+Run profiler:
 ```bash
 node --env-file=.env packages/cli/dist/index.js profile \
   -c agent.yaml \
@@ -83,35 +77,63 @@ node --env-file=.env packages/cli/dist/index.js profile \
   -o test-suite.json
 ```
 
-**Output:**
-```
-🔬 Profiling agent: Customer Support Bot
-   Model: claude-sonnet-4-20250514
-   Executing 4 test cases...
-   [1/4] Executing...
-      ✓ Cost: $0.0003, Latency: 2366ms
-   [2/4] Executing...
-      ✓ Cost: $0.0002, Latency: 1810ms
-   [3/4] Executing...
-      ✓ Cost: $0.0006, Latency: 1975ms
-   [4/4] Executing...
-      ✓ Cost: $0.0030, Latency: 3992ms
-✅ Profiling complete: 4 test cases captured
-
-Test Suite Created:
-  ID: abc123...
-  Name: Customer Support Bot - Gold Standard
-  Test cases: 4
-  Saved to: test-suite.json
-```
-
-The test suite now contains the "gold standard" outputs from Claude Sonnet.
+**Cost**: Executes expensive model for each test case
 
 ---
 
-## Step 4: Migrate to Cheaper Model
+### Option B: Use Existing Gold Standard (Manual - Free!)
 
-Run the migration with iterative optimization:
+If you already have gold standard responses from production, use them directly:
+
+Create `manual-test-cases.json`:
+```json
+[
+  {
+    "input": { "message": "What is 2+2?" },
+    "expectedOutput": { "response": "2 + 2 = 4" },
+    "description": "Simple arithmetic"
+  },
+  {
+    "input": { "message": "What is the capital of France?" },
+    "expectedOutput": { "response": "The capital of France is Paris." },
+    "description": "Geography knowledge"
+  }
+]
+```
+
+Create test suite directly:
+```bash
+node --env-file=.env packages/cli/dist/index.js create-test-suite \
+  -i manual-test-cases.json \
+  -o test-suite.json \
+  -n "My Gold Standard"
+```
+
+**Output:**
+```
+Test Suite Created:
+  ID: abc123...
+  Name: My Gold Standard
+  Test cases: 2
+  Saved to: test-suite.json
+
+✓ Ready to use with distill migrate
+```
+
+**Cost**: FREE - no model execution needed!
+
+**Tips for good test suites:**
+- 10-50 diverse test cases
+- Cover different complexity levels (simple, medium, complex)
+- Include edge cases
+- Use real examples from production
+- Representative of actual usage
+
+---
+
+## Step 3: Migrate to Cheaper Model
+
+Once you have your test suite (from either option), run the migration:
 
 ```bash
 node --env-file=.env packages/cli/dist/index.js migrate \
