@@ -1,0 +1,89 @@
+{
+  "id": "X6NLQxnqK9JTnvTQ8qwK-",
+  "name": "Sentiment Classification Tests",
+  "description": "Manually created test suite",
+  "agentName": "Manual",
+  "createdAt": "2026-02-07T11:07:37.092Z",
+  "testCases": [
+    {
+      "id": "7eY3lLs5kYDunTFjPIou5",
+      "description": "Clear positive sentiment with enthusiasm",
+      "input": {
+        "message": "I absolutely love this product! It exceeded all my expectations and made my life so much easier."
+      },
+      "expectedOutput": {
+        "response": "positive: The text expresses strong enthusiasm and satisfaction with the product."
+      }
+    },
+    {
+      "id": "ZKyZTg_yT3pOE-wW3bDvj",
+      "description": "Clear negative sentiment with strong emotion",
+      "input": {
+        "message": "This is the worst experience I've ever had. Completely disappointed and frustrated."
+      },
+      "expectedOutput": {
+        "response": "negative: The text expresses extreme dissatisfaction and frustration."
+      }
+    },
+    {
+      "id": "CXWhpW_mNbp9BuY4ZxW51",
+      "description": "Neutral factual statement",
+      "input": {
+        "message": "The meeting is scheduled for 3 PM tomorrow in conference room B."
+      },
+      "expectedOutput": {
+        "response": "neutral: The text is purely factual information about a meeting without emotional content."
+      }
+    },
+    {
+      "id": "kx4R1tswY9Pezcip_Hq-m",
+      "description": "Mixed/neutral sentiment",
+      "input": {
+        "message": "It's okay, I guess. Not great but not terrible either."
+      },
+      "expectedOutput": {
+        "response": "neutral: The text expresses a balanced, lukewarm opinion without strong positive or negative feelings."
+      }
+    },
+    {
+      "id": "jyG0Ze9K-8M8Y1pjQ6n-1",
+      "description": "Positive with gratitude",
+      "input": {
+        "message": "Amazing! This is exactly what I needed. Thank you so much!"
+      },
+      "expectedOutput": {
+        "response": "positive: The text shows excitement, satisfaction, and gratitude."
+      }
+    },
+    {
+      "id": "87LqONjhP-QAh3Sj1sv-d",
+      "description": "Negative with frustration",
+      "input": {
+        "message": "I'm so tired of dealing with this issue. Nothing ever works properly."
+      },
+      "expectedOutput": {
+        "response": "negative: The text expresses exhaustion, frustration, and pessimism."
+      }
+    },
+    {
+      "id": "IWRdIlJOmhbxqhAVFIQbA",
+      "description": "Neutral descriptive content",
+      "input": {
+        "message": "The report contains three main sections: introduction, methodology, and conclusions."
+      },
+      "expectedOutput": {
+        "response": "neutral: The text provides factual information about document structure without emotional tone."
+      }
+    },
+    {
+      "id": "avxazNLmxNssVR9tdqO7_",
+      "description": "Strong positive recommendation",
+      "input": {
+        "message": "Best decision I ever made! Highly recommend to everyone!"
+      },
+      "expectedOutput": {
+        "response": "positive: The text expresses strong approval and enthusiastic recommendation."
+      }
+    }
+  ]
+}

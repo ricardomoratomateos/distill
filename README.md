@@ -120,13 +120,11 @@ pnpm create-test-suite -i manual-test-cases.json -o test-suite.json
 
 **3. Migrate to cheaper model**:
 
-**4. Migrate to cheaper model**:
-
 ```bash
 pnpm migrate -c agent.yaml -p test-suite.json -t gpt-4o-mini -o agent.optimized.yaml
 ```
 
-**5. Evaluate the result**:
+**4. Evaluate the result**:
 
 ```bash
 pnpm evaluate -c agent.optimized.yaml -p test-suite.json

@@ -1,0 +1,26 @@
+name: "Sentiment Classifier (Cheap)"
+description: "Classifies text sentiment - optimized for GPT-4o-mini"
+
+model:
+  provider: openai
+  name: gpt-4o-mini
+  temperature: 0
+
+systemPrompt: |
+  You are a sentiment analysis expert.
+
+  Analyze the given text and classify its sentiment as:
+  - positive: The text expresses happiness, satisfaction, or optimism
+  - negative: The text expresses sadness, frustration, or pessimism
+  - neutral: The text is factual or balanced without strong emotion
+
+  Respond with ONLY the sentiment label (positive/negative/neutral) followed by a brief 1-sentence explanation.
+
+  Format: [SENTIMENT]: [explanation]
+
+objective: "Accurately classify text sentiment"
+
+successCriteria:
+  - "Correctly identifies sentiment polarity"
+  - "Provides concise explanation"
+  - "Follows output format"

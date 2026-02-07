@@ -41,20 +41,25 @@ export class Validator {
     
     const graph = createMigrationGraph();
     
-    const result = await graph.invoke({
-      sourceConfig,
-      targetConfig,
-      testSuite,
-      threshold: this.config.threshold,
-      maxIterations: this.config.maxIterations,
-      strategy: this.config.strategy,
-      currentPrompt: targetConfig.systemPrompt,
-      iteration: 0,
-      testResults: [],
-      successRate: 0,
-      converged: false,
-      finalPrompt: null,
-    });
+    const result = await graph.invoke(
+      {
+        sourceConfig,
+        targetConfig,
+        testSuite,
+        threshold: this.config.threshold,
+        maxIterations: this.config.maxIterations,
+        strategy: this.config.strategy,
+        currentPrompt: targetConfig.systemPrompt,
+        iteration: 0,
+        testResults: [],
+        successRate: 0,
+        converged: false,
+        finalPrompt: null,
+      },
+      {
+        recursionLimit: 100, // Allow up to 100 steps (maxIterations * 4 nodes per iteration + buffer)
+      }
+    );
     
     return {
       success: result.converged,
