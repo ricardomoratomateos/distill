@@ -66,21 +66,29 @@ export class Judge {
     }
   }
 
-  async evaluateBatch(testCases: TestCase[], actualOutputs: Map<string, string>): Promise<TestResult[]> {
+  async evaluateBatch(
+    testCases: TestCase[],
+    actualOutputs: Map<string, string>,
+    options?: { concurrency?: number }
+  ): Promise<TestResult[]> {
+    const concurrency = options?.concurrency ?? 3; // Default: 3 parallel evaluations
     const results: TestResult[] = [];
 
-    for (const testCase of testCases) {
+    // Helper function to process a single test case
+    const processTestCase = async (testCase: TestCase): Promise<TestResult> => {
       const actualOutput = actualOutputs.get(testCase.id);
-      
+
       if (!actualOutput) {
         throw new Error(`Missing actual output for test case ${testCase.id}`);
       }
 
       console.log(`   Evaluating: ${testCase.description}`);
-      
+
       const evaluation = await this.evaluate(testCase, actualOutput);
-      
-      const testResult: TestResult = {
+
+      console.log(`      ${evaluation.passed ? '✓' : '✗'} Score: ${evaluation.scores.correctness}/10`);
+
+      return {
         testCaseId: testCase.id,
         passed: evaluation.passed,
         actualOutput: { response: actualOutput },
@@ -95,10 +103,13 @@ export class Judge {
         },
         evaluation,
       };
+    };
 
-      results.push(testResult);
-      
-      console.log(`      ${evaluation.passed ? '✓' : '✗'} Score: ${evaluation.scores.correctness}/10`);
+    // Process in batches of 'concurrency' size
+    for (let i = 0; i < testCases.length; i += concurrency) {
+      const batch = testCases.slice(i, i + concurrency);
+      const batchResults = await Promise.all(batch.map(processTestCase));
+      results.push(...batchResults);
     }
 
     return results;

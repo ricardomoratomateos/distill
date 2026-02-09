@@ -17,12 +17,24 @@ export async function testNode(state: typeof MigrationState.State) {
   };
   
   const agent = new SingleAgent(config);
-  
-  // Execute all test cases
+
+  // Execute all test cases in parallel (batches of 5 for rate limiting)
   const outputs = new Map<string, string>();
-  for (const testCase of state.testSuite.testCases) {
-    const output = await agent.execute(testCase.input);
-    outputs.set(testCase.id, output.response);
+  const concurrency = 5;
+
+  for (let i = 0; i < state.testSuite.testCases.length; i += concurrency) {
+    const batch = state.testSuite.testCases.slice(i, i + concurrency);
+    const batchResults = await Promise.all(
+      batch.map(async (testCase) => {
+        const output = await agent.execute(testCase.input);
+        return { id: testCase.id, response: output.response };
+      })
+    );
+
+    // Store results
+    for (const result of batchResults) {
+      outputs.set(result.id, result.response);
+    }
   }
   
   // Judge evaluation
