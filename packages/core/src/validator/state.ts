@@ -15,6 +15,7 @@ export const MigrationState = Annotation.Root({
   threshold: Annotation<number>,
   maxIterations: Annotation<number>,
   strategy: Annotation<ConvergenceStrategy>,
+  judgeContext: Annotation<string | undefined>,
 
   // Progress
   iteration: Annotation<number>,

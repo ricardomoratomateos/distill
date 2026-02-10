@@ -45,6 +45,7 @@ export async function testNode(state: typeof MigrationState.State) {
       name: state.sourceConfig.model.name,
     },
     threshold: state.threshold * 10, // Convert 0.95 → 9.5/10
+    judgeContext: state.judgeContext,
   });
   
   const results = await judge.evaluateBatch(state.testSuite.testCases, outputs);

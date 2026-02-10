@@ -4,12 +4,13 @@ export interface JudgePromptParams {
   actual: string;
   expectedBehavior?: string;
   threshold: number;
+  judgeContext?: string;
 }
 
 export function buildJudgeEvaluationPrompt(params: JudgePromptParams): string {
-  const { input, goldStandard, actual, expectedBehavior, threshold } = params;
-  
-  return `You are an expert evaluator of AI agent outputs. Your job is to determine if a target output meets the quality standards of a gold standard output.
+  const { input, goldStandard, actual, expectedBehavior, threshold, judgeContext } = params;
+
+  return `${judgeContext ? `DOMAIN CONTEXT:\n${judgeContext}\n\n` : ''}You are an expert evaluator of AI agent outputs. Your job is to determine if a target output meets the quality standards of a gold standard output.
 
 INPUT (user's original request):
 ${input}

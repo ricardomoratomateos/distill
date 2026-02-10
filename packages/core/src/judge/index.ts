@@ -9,14 +9,17 @@ export interface JudgeConfig {
     name: string;
   };
   threshold?: number;
+  judgeContext?: string;
 }
 
 export class Judge {
   private model: ChatAnthropic | ChatOpenAI;
   private threshold: number;
+  private judgeContext?: string;
 
   constructor(config: JudgeConfig) {
     this.threshold = config.threshold ?? 8;
+    this.judgeContext = config.judgeContext;
     this.model = this.createModel(config.model);
   }
 
@@ -54,6 +57,7 @@ export class Judge {
       actual: actualOutput,
       expectedBehavior: testCase.expectedBehavior,
       threshold: this.threshold,
+      judgeContext: this.judgeContext,
     });
 
     try {

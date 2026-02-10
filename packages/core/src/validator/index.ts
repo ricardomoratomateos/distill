@@ -3,10 +3,18 @@ import type { AgentConfig, TestSuite } from '../types/index.js';
 import type { ConvergenceStrategy } from './strategies/index.js';
 import { ThresholdPlusBonusRoundsStrategy } from './strategies/index.js';
 
+export interface IterationProgress {
+  iteration: number;
+  successRate: number;
+  currentPrompt: string;
+}
+
 export interface ValidatorConfig {
   threshold?: number;      // Success rate needed (0-1), default: 0.95
   maxIterations?: number;  // Max iterations, default: 10
   strategy?: ConvergenceStrategy; // Convergence strategy, default: ThresholdPlusBonusRounds(2)
+  judgeContext?: string;   // Domain context for the judge evaluator
+  onIteration?: (progress: IterationProgress) => Promise<void> | void;
 }
 
 export interface MigrationResult {
@@ -18,7 +26,9 @@ export interface MigrationResult {
 }
 
 export class Validator {
-  private config: Required<ValidatorConfig>;
+  private config: Required<Omit<ValidatorConfig, 'onIteration' | 'judgeContext'>>;
+  private judgeContext?: string;
+  private onIteration?: ValidatorConfig['onIteration'];
 
   constructor(config: ValidatorConfig = {}) {
     this.config = {
@@ -26,6 +36,8 @@ export class Validator {
       maxIterations: config.maxIterations ?? 10,
       strategy: config.strategy ?? new ThresholdPlusBonusRoundsStrategy({ bonusRounds: 2 }),
     };
+    this.judgeContext = config.judgeContext;
+    this.onIteration = config.onIteration;
   }
 
   async migrate(
@@ -36,36 +48,60 @@ export class Validator {
     console.log('🚀 Starting migration...\n');
     console.log(`Source: ${sourceConfig.model.name}`);
     console.log(`Target: ${targetConfig.model.name}`);
-    console.log(`Threshold: ${(this.config.threshold! * 100).toFixed(0)}%`);
+    console.log(`Threshold: ${(this.config.threshold * 100).toFixed(0)}%`);
     console.log(`Max iterations: ${this.config.maxIterations}`);
-    
+
     const graph = createMigrationGraph();
-    
-    const result = await graph.invoke(
-      {
-        sourceConfig,
-        targetConfig,
-        testSuite,
-        threshold: this.config.threshold,
-        maxIterations: this.config.maxIterations,
-        strategy: this.config.strategy,
-        currentPrompt: targetConfig.systemPrompt,
-        iteration: 0,
-        testResults: [],
-        successRate: 0,
-        converged: false,
-        finalPrompt: null,
-      },
-      {
-        recursionLimit: 100, // Allow up to 100 steps (maxIterations * 4 nodes per iteration + buffer)
+
+    const initialState = {
+      sourceConfig,
+      targetConfig,
+      testSuite,
+      threshold: this.config.threshold,
+      maxIterations: this.config.maxIterations,
+      strategy: this.config.strategy,
+      judgeContext: this.judgeContext,
+      currentPrompt: targetConfig.systemPrompt,
+      iteration: 0,
+      testResults: [],
+      successRate: 0,
+      converged: false,
+      finalPrompt: null,
+    };
+
+    const stream = await graph.stream(initialState, {
+      recursionLimit: 100,
+      streamMode: "updates",
+    });
+
+    let finalState: any = initialState;
+    let totalIterations = 0;
+
+    for await (const chunk of stream) {
+      const [nodeName, updates] = Object.entries(chunk)[0] as [string, any];
+
+      // Capture iteration count from test node before check can overwrite it
+      // (checkConvergence overwrites iteration with best.iteration on completion)
+      if (nodeName === 'test' && updates.iteration !== undefined) {
+        totalIterations = updates.iteration;
       }
-    );
-    
+
+      finalState = { ...finalState, ...updates };
+
+      if (nodeName === 'check' && this.onIteration) {
+        await this.onIteration({
+          iteration: totalIterations,
+          successRate: finalState.successRate,
+          currentPrompt: finalState.currentPrompt,
+        });
+      }
+    }
+
     return {
-      success: result.converged,
-      iterations: result.iteration,
-      finalSuccessRate: result.successRate,
-      finalPrompt: result.finalPrompt || targetConfig.systemPrompt,
+      success: finalState.converged,
+      iterations: totalIterations,
+      finalSuccessRate: finalState.successRate,
+      finalPrompt: finalState.finalPrompt || targetConfig.systemPrompt,
       originalPrompt: targetConfig.systemPrompt,
     };
   }
